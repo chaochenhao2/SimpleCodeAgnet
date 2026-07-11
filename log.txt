@@ -1,0 +1,37 @@
+┌───────────────────── 欢迎使用 ─────────────────────┐
+│ Code Agent TUI                                     │
+│ Powered by Rich & OpenAI API                       │
+│ Working Directory: E:\Users\Administrator\My_Agent │
+└─────────────── 输入 /help 查看命令 ────────────────┘
+你: /sessions
+                  已保存的会话
+┌─────┬─────────────────────┬──────────────────┐
+│ #   │ 标题                │ 更新时间         │
+├─────┼─────────────────────┼──────────────────┤
+│ 1   │ 结构化，模块化代码A │ 2026-07-11 11:53 │
+│ 2   │ 汉化一下            │ 2026-07-11 11:58 │
+│ 3   │ 未命名会话          │ 2026-07-11 11:59 │
+│ 4   │ 先理解项目然后优化U │ 2026-07-11 12:09 │
+└─────┴─────────────────────┴──────────────────┘
+你: /sessions 4
+                  已保存的会话
+┌─────┬─────────────────────┬──────────────────┐
+│ #   │ 标题                │ 更新时间         │
+├─────┼─────────────────────┼──────────────────┤
+│ 1   │ 结构化，模块化代码A │ 2026-07-11 11:53 │
+│ 2   │ 汉化一下            │ 2026-07-11 11:58 │
+│ 3   │ 未命名会话          │ 2026-07-11 11:59 │
+│ 4   │ 先理解项目然后优化U │ 2026-07-11 12:09 │
+└─────┴─────────────────────┴──────────────────┘
+Traceback (most recent call last):
+  File "E:\Users\Administrator\My_Agent\AI.py", line 279, in <module>
+    main()
+    ~~~~^^
+  File "E:\Users\Administrator\My_Agent\AI.py", line 131, in main
+    session.load_session(file_path)
+    ~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "E:\Users\Administrator\My_Agent\session_manager.py", line 42, in load_session
+    data = json.load(fp)
+                     ^^
+NameError: name 'fp' is not defined. Did you mean: 'f'?
+PS E:\Users\Administrator\My_Agent>   
