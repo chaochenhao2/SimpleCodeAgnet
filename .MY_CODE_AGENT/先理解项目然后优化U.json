@@ -1,0 +1,464 @@
+{
+  "title": "先理解项目然后优化U",
+  "messages": [
+    {
+      "role": "user",
+      "content": "先理解项目然后优化UI，改为TUI，现在的纯文本太不易上手了"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_250e3a0c08aa4fd087d346b8",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-ChildItem -Recurse -Name E:\\\\Users\\\\Administrator\\\\My_Agent\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_250e3a0c08aa4fd087d346b8",
+      "content": ".MY_CODE_AGENT\n__pycache__\n.env\n.gitignore\nAI.py\nconfig.py\nprompt_builder.py\nREADME.md\nresponse_handler.py\nsession_manager.py\ntools.py\n.MY_CODE_AGENT\\未命名会话_20260711_115902.json\n.MY_CODE_AGENT\\汉化一下.json\n.MY_CODE_AGENT\\结构化，模块化代码A.json\n__pycache__\\AI.cpython-313.pyc\n__pycache__\\config.cpython-313.pyc\n__pycache__\\prompt_builder.cpython-313.pyc\n__pycache__\\response_handler.cpython-313.pyc\n__pycache__\\session_manager.cpython-313.pyc\n__pycache__\\tools.cpython-313.pyc"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_d9c29eba21a34d39be633d47",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_d9c29eba21a34d39be633d47",
+      "content": "import os\nimport json\nfrom config import client, API_MODEL\nfrom tools import tools, function_map\nfrom session_manager import SessionManager\nfrom response_handler import process_stream\n\n# ================== 主程序 ==================\ndef main():\n    session = SessionManager()\n    print(f\"Code Agent (PowerShell) 已启动。当前目录: {os.getcwd()}\")\n    print(\"输入 /help 查看可用命令。\")\n\n    while True:\n        try:\n            user_input = input(\"\\n你: \").strip()\n        except EOFError:\n            print()\n            break\n            \n        if not user_input:\n            continue\n\n        # ---------- 处理命令 ----------\n        if user_input.startswith(\"/\"):\n            parts = user_input.split()\n            cmd = parts[0].lower()\n\n            if cmd in [\"/exit\", \"/quit\"]:\n                session.save_current()\n                print(\"再见！\")\n                break\n\n            elif cmd == \"/sessions\":\n                if len(parts) > 1:\n                    try:\n                        num = int(parts[1])\n                        sessions = session.get_session_files()\n                        if 1 <= num <= len(sessions):\n                            _, file_path, _, _ = sessions[num-1]\n                            session.load_session(file_path)\n                        else:\n                            print(f\"无效数字，有效范围: 1 ~ {len(sessions)}\")\n                    except ValueError:\n                        print(\"请提供数字，例如: /sessions 2\")\n                else:\n                    sessions = session.get_session_files()\n                    if not sessions:\n                        print(\"未找到保存的会话。\")\n                    else:\n                        print(\"已保存的会话:\")\n                        for idx, f, title, updated in sessions:\n                            print(f\"  {idx}. {title} (更新于: {updated})\")\n                continue\n\n            elif cmd == \"/history\":\n                history = [m for m in session.messages if m[\"role\"] != \"system\"]\n                if not history:\n                    print(\"无对话历史。\")\n                else:\n                    print(\"\\n=== 完整对话历史 ===\")\n                    for i, msg in enumerate(history, 1):\n                        role = msg[\"role\"]\n                        content = msg.get(\"content\", \"\")\n                        if role == \"user\":\n                            prefix = f\"{i}. 用户\"\n                        elif role == \"assistant\":\n                            prefix = f\"{i}. AI\"\n                        elif role == \"tool\":\n                            prefix = f\"{i}. 工具\"\n                        else:\n                            prefix = f\"{i}. {role}\"\n                        if len(content) > 500:\n                            content = content[:500] + \"...\"\n                        print(f\"{prefix}: {content}\")\n                    print(\"=====================\")\n                continue\n\n            elif cmd == \"/new\":\n                session.save_current()\n                session._init_new_session()\n                print(\"开始新会话。\")\n                continue\n\n            elif cmd == \"/save\":\n                session.save_current()\n                print(f\"会话已保存到 {session.session_file.name}\")\n                continue\n\n            elif cmd == \"/help\":\n                print(\"可用命令:\")\n                print(\"  /sessions          - 列出所有已保存的会话\")\n                print(\"  /sessions <num>    - 通过编号加载特定会话\")\n                print(\"  /history           - 查看完整对话历史\")\n                print(\"  /new               - 开始新会话（自动保存当前会话）\")\n                print(\"  /save              - 手动保存当前会话\")\n                print(\"  /exit 或 /quit    - 退出并保存当前会话\")\n                continue\n\n            else:\n                print(f\"未知命令: {cmd}，输入 /help 获取帮助\")\n                continue\n\n        # ---------- 正常对话 ----------\n        if len(session.messages) == 1:\n            title_candidate = user_input[:10].strip()\n            session.title = title_candidate if title_candidate else \"未命名会话\"\n\n        session.messages.append({\"role\": \"user\", \"content\": user_input})\n\n        while True:\n            try:\n                stream = client.chat.completions.create(\n                    model=API_MODEL,\n                    messages=session.messages,\n                    tools=tools,\n                    tool_choice=\"auto\",\n                    stream=True,\n                    timeout=60\n                )\n            except Exception as e:\n                print(f\"\\nAPI 调用失败: {type(e).__name__}: {e}\")\n                break\n\n            assistant_content, tool_calls = process_stream(stream)\n\n            assistant_message = {\"role\": \"assistant\", \"content\": assistant_content}\n            if tool_calls:\n                assistant_message[\"tool_calls\"] = tool_calls\n            session.messages.append(assistant_message)\n\n            if not tool_calls:\n                break\n\n            for tool_call in tool_calls:\n                func_name = tool_call[\"function\"][\"name\"]\n                func_args = json.loads(tool_call[\"function\"][\"arguments\"])\n\n                if func_name not in function_map:\n                    result = f\"错误: 未知工具 '{func_name}'\"\n                else:\n                    print(f\"\\n调用工具 {func_name}，参数: {func_args}\")\n                    result = function_map[func_name](**func_args)\n                    preview = result[:200] + \"...\" if len(result) > 200 else result\n                    print(f\"工具返回: {preview}\")\n\n                session.messages.append({\n                    \"role\": \"tool\",\n                    \"tool_call_id\": tool_call[\"id\"],\n                    \"content\": result\n                })\n\n            session.save_current()\n\n        session.save_current()\n\nif __name__ == \"__main__\":\n    main()"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_1868a11792534bb1abcb4426",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\config.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_1868a11792534bb1abcb4426",
+      "content": "import os\nfrom dotenv import load_dotenv\nfrom openai import OpenAI\n\n# ================== 配置加载 ==================\nload_dotenv()\n\nAPI_KEY = os.getenv(\"API_KEY\")\nAPI_BASE_URL = os.getenv(\"API_BASE_URL\")\nAPI_MODEL = os.getenv(\"API_MODEL\")\n\nif not all([API_KEY, API_BASE_URL, API_MODEL]):\n    raise ValueError(\"请在 .env 文件中设置 API_KEY, API_BASE_URL, API_MODEL\")\n\nclient = OpenAI(api_key=API_KEY, base_url=API_BASE_URL)\n\n# ================== 会话存储目录 ==================\nfrom pathlib import Path\nSCRIPT_DIR = Path(__file__).parent\nSESSION_DIR = SCRIPT_DIR / \".MY_CODE_AGENT\"\nSESSION_DIR.mkdir(exist_ok=True)"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_ffb285eb93cd4595ab3db413",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\tools.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ffb285eb93cd4595ab3db413",
+      "content": "import subprocess\nimport os\n\n# ================== 工具函数 ==================\ndef exec_powershell(command: str, timeout: int = 30) -> str:\n    '''执行 PowerShell 命令'''\n    try:\n        result = subprocess.run(\n            [\"powershell.exe\", \"-Command\", command],\n            capture_output=True,\n            text=True,\n            timeout=timeout,\n            shell=False\n        )\n        output = result.stdout\n        if result.stderr:\n            output += \"\\n[标准错误]\\n\" + result.stderr\n        return output.strip() or \"[命令执行成功，无输出]\"\n    except subprocess.TimeoutExpired:\n        return f\"命令超时 ({timeout} 秒): {command}\"\n    except Exception as e:\n        return f\"执行失败: {str(e)}\"\n\n\n# ================== 工具定义 ==================\ntools = [\n    {\n        \"type\": \"function\",\n        \"function\": {\n            \"name\": \"exec_powershell\",\n            \"description\": \"执行 PowerShell 命令并返回输出（包括标准输出和标准错误）。\",\n            \"parameters\": {\n                \"type\": \"object\",\n                \"properties\": {\n                    \"command\": {\"type\": \"string\", \"description\": \"PowerShell 命令字符串，例如 'Get-Process'\"}\n                },\n                \"required\": [\"command\"]\n            }\n        }\n    }\n]\n\nfunction_map = {\n    \"exec_powershell\": exec_powershell,\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_02ff0afce4bc46b2bbc0001b",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\session_manager.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_02ff0afce4bc46b2bbc0001b",
+      "content": "import os\nimport re\nimport json\nfrom pathlib import Path\nfrom datetime import datetime\nfrom config import SESSION_DIR\nfrom prompt_builder import build_system_prompt\n\n# ================== 会话管理器 ==================\nclass SessionManager:\n    def __init__(self):\n        self.messages = []\n        self.title = \"未命名会话\"\n        self.session_file = None\n        self._init_new_session()\n\n    def _init_new_session(self):\n        \"\"\"初始化新会话（清空历史，保留系统提示词）\"\"\"\n        self.messages = [{\"role\": \"system\", \"content\": build_system_prompt()}]\n        self.title = \"未命名会话\"\n        self.session_file = None\n\n    def get_session_files(self):\n        \"\"\"返回所有会话文件信息，按修改时间排序\"\"\"\n        files = sorted(SESSION_DIR.glob(\"*.json\"), key=lambda p: p.stat().st_mtime)\n        sessions = []\n        for idx, f in enumerate(files, 1):\n            try:\n                with open(f, \"r\", encoding=\"utf-8\") as fp:\n                    data = json.load(fp)\n                    title = data.get(\"title\", \"未命名\")\n                    updated = data.get(\"updated_at\", datetime.fromtimestamp(f.stat().st_mtime).isoformat())\n            except:\n                title = \"损坏的会话\"\n                updated = datetime.fromtimestamp(f.stat().st_mtime).isoformat()\n            sessions.append((idx, f, title, updated))\n        return sessions\n\n    def load_session(self, file_path: Path):\n        \"\"\"加载指定会话文件并显示近期历史\"\"\"\n        with open(file_path, \"r\", encoding=\"utf-8\") as f:\n            data = json.load(fp)\n        self.title = data.get(\"title\", \"未命名会话\")\n        system_prompt = build_system_prompt()\n        self.messages = [{\"role\": \"system\", \"content\": system_prompt}] + data.get(\"messages\", [])\n        self.session_file = file_path\n        print(f\"已恢复会话: {self.title}\")\n        history = [m for m in self.messages if m[\"role\"] != \"system\"]\n        if history:\n            print(\"\\n=== 近期对话（最近5条消息）===\")\n            for msg in history[-5:]:\n                role = msg[\"role\"]\n                content = msg.get(\"content\", \"\")\n                if role == \"user\":\n                    prefix = \"用户\"\n                elif role == \"assistant\":\n                    prefix = \"AI\"\n                elif role == \"tool\":\n                    prefix = \"工具\"\n                else:\n                    prefix = role\n                if len(content) > 150:\n                    content = content[:150] + \"...\"\n                print(f\"  [{prefix}] {content}\")\n        else:\n            print(\"  (无历史消息)\")\n        print(\"(输入消息以继续，或输入 /history 查看完整历史)\")\n\n    def _sanitize_filename(self, name: str) -> str:\n        \"\"\"将标题转换为有效的文件名（移除非法字符）\"\"\"\n        illegal_chars = r'[<>:\\\"/\\\\\\\\|?*]'\n        name = re.sub(illegal_chars, '', name)\n        name = name.strip('. ')\n        if not name:\n            name = \"未命名会话\"\n        if len(name) > 50:\n            name = name[:50]\n        return name\n\n    def save_current(self):\n        \"\"\"保存当前会话到文件，如果标题改变则自动重命名\"\"\"\n        if not self.messages:\n            return\n\n        safe_title = self._sanitize_filename(self.title)\n        if safe_title == \"未命名会话\":\n            timestamp = datetime.now().strftime(\"%Y%m%d_%H%M%S\")\n            new_filename = f\"{safe_title}_{timestamp}.json\"\n        else:\n            new_filename = f\"{safe_title}.json\"\n\n        if self.session_file is None:\n            base_path = SESSION_DIR / new_filename\n            counter = 1\n            while base_path.exists():\n                name, ext = os.path.splitext(new_filename)\n                base_path = SESSION_DIR / f\"{name}_{counter}{ext}\"\n                counter += 1\n            self.session_file = base_path\n        else:\n            current_name = self.session_file.stem\n            if current_name.startswith(\"未命名会话\") and safe_title != \"未命名会话\":\n                new_path = SESSION_DIR / new_filename\n                counter = 1\n                while new_path.exists():\n                    name, ext = os.path.splitext(new_filename)\n                    new_path = SESSION_DIR / f\"{name}_{counter}{ext}\"\n                    counter += 1\n                self.session_file.rename(new_path)\n                self.session_file = new_path\n                print(f\"会话文件已重命名为: {self.session_file.name}\")\n\n        save_data = {\n            \"title\": self.title,\n            \"messages\": self.messages[1:],\n            \"created_at\": datetime.now().isoformat(),\n            \"updated_at\": datetime.now().isoformat()\n        }\n        with open(self.session_file, \"w\", encoding=\"utf-8\") as f:\n            json.dump(save_data, f, ensure_ascii=False, indent=2)"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_b689b3b6210e441b9e6ad2a2",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\response_handler.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_b689b3b6210e441b9e6ad2a2",
+      "content": "import json\n\n# ================== 流式响应处理器 ==================\ndef process_stream(stream):\n    '''处理流式响应，提取内容文本和工具调用'''\n    content = \"\"\n    tool_calls_dict = {}\n\n    for chunk in stream:\n        if not chunk.choices:\n            continue\n        delta = chunk.choices[0].delta\n\n        if delta.content:\n            print(delta.content, end=\"\", flush=True)\n            content += delta.content\n\n        if delta.tool_calls:\n            for tc in delta.tool_calls:\n                idx = tc.index\n                if idx not in tool_calls_dict:\n                    tool_calls_dict[idx] = {\"id\": None, \"name\": None, \"arguments\": \"\"}\n                if tc.id:\n                    tool_calls_dict[idx][\"id\"] = tc.id\n                if tc.function:\n                    if tc.function.name:\n                        tool_calls_dict[idx][\"name\"] = tc.function.name\n                    if tc.function.arguments:\n                        tool_calls_dict[idx][\"arguments\"] += tc.function.arguments\n\n    if content:\n        print()\n\n    tool_calls = []\n    for idx in sorted(tool_calls_dict.keys()):\n        item = tool_calls_dict[idx]\n        if item[\"id\"] and item[\"name\"]:\n            tool_calls.append({\n                \"id\": item[\"id\"],\n                \"type\": \"function\",\n                \"function\": {\n                    \"name\": item[\"name\"],\n                    \"arguments\": item[\"arguments\"]\n                }\n            })\n    return content, tool_calls"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_bdb62f9cbf9f404aaa322799",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Get-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\prompt_builder.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_bdb62f9cbf9f404aaa322799",
+      "content": "import os\n\n# ================== 系统提示词生成器 ==================\ndef build_system_prompt():\n    cwd = os.getcwd()\n    prompt = \"\"\"你是一个运行在 Windows 系统上的 AI 代码助手，使用 **PowerShell** 终端。\n你的任务是根据用户需求执行 PowerShell 命令以及读写文件。\n\n**当前工作目录: {cwd}**\n所有相对路径都基于此目录。例如，'data.txt' 指的是 '{cwd}/data.txt'。\n\n**重要规则**:\n1. 你必须严格遵守提供的工具定义。不要发明函数名或参数。\n2. 工具调用结果会反馈给你。你需要进行推理并继续操作，直到获得最终答案。\n3. 当用户提出的问题可以直接通过 PowerShell 解决时，优先使用 `exec_powershell` 工具。\n4. **注意: 只有一个可用工具 - `exec_powershell`！** 所有文件操作（读取、写入、编辑）都必须通过 PowerShell 命令完成。\n5. 在调用工具前，请仔细思考：是否缺少信息？是否需要先执行某些命令？\n6. 你的最终回答应清晰、简洁，并包含关键信息。\n7. 如果工具返回错误，请调整方法或告知用户。\n8. **特别说明**: 每次 `exec_powershell` 调用都会启动一个新的 PowerShell 进程。之前的 `cd` 命令不会影响后续调用。\n\n请记住：你只负责决定调用哪些工具。输出格式必须符合 JSON 规范。\n\"\"\".format(cwd=cwd)\n    return prompt"
+    },
+    {
+      "role": "assistant",
+      "content": "好的，我已经阅读并理解了项目的结构。这是一个基于 LLM API 的代码助手 TUI，支持多会话管理、PowerShell 命令执行和历史记录查看。\n\n现在我将引入 `rich` 库来重写 UI，使其具有更好的视觉效果：\n1.  **彩色输出**：区分用户、AI、工具调用和系统消息。\n2.  **面板 (Panel)**：用于显示帮助信息和会话列表。\n3.  **进度条/状态指示**：在等待 AI 响应时显示加载动画。\n4.  **表格 (Table)**：美化会话列表展示。\n5.  **Markdown 渲染**：尝试对 AI 的回复进行简单的 Markdown 格式化（如果 rich 支持的话）。\n\n首先，我需要确保 `rich` 库已安装。\n\n",
+      "tool_calls": [
+        {
+          "id": "call_0076fc5280fc4a6fbc45c6d0",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"pip show rich\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_0076fc5280fc4a6fbc45c6d0",
+      "content": "[标准错误]\nWARNING: Package(s) not found: rich"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_a13826ee066c478f9dcc157a",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"pip install rich\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_a13826ee066c478f9dcc157a",
+      "content": "Collecting rich\n  Downloading rich-15.0.0-py3-none-any.whl.metadata (18 kB)\nCollecting markdown-it-py>=2.2.0 (from rich)\n  Downloading markdown_it_py-4.2.0-py3-none-any.whl.metadata (7.4 kB)\nCollecting pygments<3.0.0,>=2.13.0 (from rich)\n  Downloading pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)\nCollecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich)\n  Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)\nDownloading rich-15.0.0-py3-none-any.whl (310 kB)\nDownloading pygments-2.20.0-py3-none-any.whl (1.2 MB)\n   ---------------------------------------- 1.2/1.2 MB 2.7 MB/s  0:00:00\nDownloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)\nDownloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)\nInstalling collected packages: pygments, mdurl, markdown-it-py, rich\n\nSuccessfully installed markdown-it-py-4.2.0 mdurl-0.1.2 pygments-2.20.0 rich-15.0.0\n\n[标准错误]\n\n[notice] A new release of pip is available: 25.2 -> 26.1.2\n[notice] To update, run: python.exe -m pip install --upgrade pip"
+    },
+    {
+      "role": "assistant",
+      "content": "现在我将重写 `AI.py`，引入 `rich` 库来打造现代化的 TUI 界面。\n\n主要改进点：\n1.  **Rich Prompt**：使用 `rich.prompt` 实现更美观的用户输入提示符。\n2.  **Rich Panel/Table**：美化 `/help`, `/sessions`, `/history` 的输出。\n3.  **Markdown 渲染**：使用 `rich.markdown.Markdown` 渲染 AI 的回复。\n4.  **Live Display**：使用 `rich.live.Live` 来实现打字机效果，避免逐字打印时的闪烁，并支持流式渲染 Markdown。\n5.  **颜色区分**：用户输入用蓝色，AI 回复用绿色，工具调用用黄色/橙色，错误用红色。\n\n",
+      "tool_calls": [
+        {
+          "id": "call_f4458afc6cf44757a49a6666",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"@\\\"\\nimport os\\nimport json\\nfrom pathlib import Path\\nfrom datetime import datetime\\n\\nfrom rich.console import Console\\nfrom rich.panel import Panel\\nfrom rich.table import Table\\nfrom rich.prompt import Prompt\\nfrom rich.markdown import Markdown\\nfrom rich.live import Live\\nfrom rich.text import Text\\nfrom rich.rule import Rule\\n\\nfrom config import client, API_MODEL, SESSION_DIR\\nfrom tools import tools, function_map\\nfrom session_manager import SessionManager\\nfrom response_handler import process_stream\\n\\nconsole = Console()\\n\\ndef print_help():\\n    help_text = \\\\\\\"\\\\\\\"\\\\\\\"\\n**可用命令:**\\n\\n- `/sessions`          : 列出所有已保存的会话\\n- `/sessions <num>`    : 通过编号加载特定会话\\n- `/history`           : 查看完整对话历史\\n- `/new`               : 开始新会话（自动保存当前会话）\\n- `/save`              : 手动保存当前会话\\n- `/clear`             : 清屏\\n- `/exit` 或 `/quit`   : 退出并保存当前会话\\n\\\\\\\"\\\\\\\"\\\\\\\"\\n    console.print(Panel(help_text.strip(), title=\\\\\\\"[bold blue]帮助[/bold blue]\\\\\\\", border_style=\\\\\\\"blue\\\\\\\"))\\n\\ndef print_sessions(sessions):\\n    table = Table(title=\\\\\\\"[bold green]已保存的会话[/bold green]\\\\\\\", show_header=True, header_style=\\\\\\\"bold magenta\\\\\\\")\\n    table.add_column(\\\\\\\"#\\\\\\\", style=\\\\\\\"dim\\\\\\\", width=3)\\n    table.add_column(\\\\\\\"标题\\\\\\\", style=\\\\\\\"cyan\\\\\\\")\\n    table.add_column(\\\\\\\"更新时间\\\\\\\", style=\\\\\\\"yellow\\\\\\\")\\n    \\n    for idx, path, title, updated in sessions:\\n        # 格式化时间，只显示日期和时间部分\\n        try:\\n            dt = datetime.fromisoformat(updated)\\n            time_str = dt.strftime(\\\\\\\"%Y-%m-%d %H:%M\\\\\\\")\\n        except:\\n            time_str = updated[:19] if len(updated) > 19 else updated\\n            \\n        table.add_row(str(idx), title, time_str)\\n        \\n    console.print(table)\\n\\ndef print_history(session):\\n    history = [m for m in session.messages if m[\\\\\\\"role\\\\\\\"] != \\\\\\\"system\\\\\\\"]\\n    if not history:\\n        console.print(\\\\\\\"[yellow]无对话历史。[/yellow]\\\\\\\")\\n        return\\n\\n    console.print(Rule(\\\\\\\"[bold cyan]对话历史[/bold cyan]\\\\\\\", style=\\\\\\\"cyan\\\\\\\"))\\n    \\n    for i, msg in enumerate(history, 1):\\n        role = msg[\\\\\\\"role\\\\\\\"]\\n        content = msg.get(\\\\\\\"content\\\\\\\", \\\\\\\"\\\\\\\")\\n        \\n        if role == \\\\\\\"user\\\\\\\":\\n            style = \\\\\\\"bold blue\\\\\\\"\\n            prefix = \\\\\\\"用户\\\\\\\"\\n        elif role == \\\\\\\"assistant\\\\\\\":\\n            style = \\\\\\\"bold green\\\\\\\"\\n            prefix = \\\\\\\"AI\\\\\\\"\\n        elif role == \\\\\\\"tool\\\\\\\":\\n            style = \\\\\\\"bold yellow\\\\\\\"\\n            prefix = \\\\\\\"工具\\\\\\\"\\n        else:\\n            style = \\\\\\\"bold white\\\\\\\"\\n            prefix = role\\n            \\n        # 截断长内容\\n        if len(content) > 500:\\n            display_content = content[:500] + \\\\\\\"\\\\\\\\n[内容过长，已截断...]\\\\\\\"\\n        else:\\n            display_content = content\\n            \\n        console.print(f\\\\\\\"[bold]{i}. {prefix}:[/bold] {display_content}\\\\\\\")\\n        \\n    console.print(Rule(style=\\\\\\\"cyan\\\\\\\"))\\n\\ndef main():\\n    session = SessionManager()\\n    \\n    console.clear()\\n    console.print(Panel.fit(\\n        \\\\\\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\\\\\n\\\\\\\"\\n        \\\\\\\"[dim]Powered by Rich & OpenAI API[/dim]\\\\\\\\n\\\\\\\"\\n        f\\\\\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\\\\\",\\n        title=\\\\\\\"[bold green]欢迎使用[/bold green]\\\\\\\",\\n        subtitle=\\\\\\\"输入 /help 查看命令\\\\\\\",\\n        border_style=\\\\\\\"green\\\\\\\"\\n    ))\\n    \\n    while True:\\n        try:\\n            user_input = Prompt.ask(\\\\\\\"[bold blue]你[/bold blue]\\\\\\\")\\n        except (EOFError, KeyboardInterrupt):\\n            console.print(\\\\\\\"\\\\\\\\n[yellow]退出中...[/yellow]\\\\\\\")\\n            break\\n            \\n        if not user_input:\\n            continue\\n\\n        # ---------- 处理命令 ----------\\n        if user_input.startswith(\\\\\\\"/\\\\\\\"):\\n            parts = user_input.split(maxsplit=1)\\n            cmd = parts[0].lower()\\n            arg = parts[1] if len(parts) > 1 else None\\n\\n            if cmd in [\\\\\\\"/exit\\\\\\\", \\\\\\\"/quit\\\\\\\"]:\\n                session.save_current()\\n                console.print(\\\\\\\"[bold red]再见！[/bold red]\\\\\\\")\\n                break\\n\\n            elif cmd == \\\\\\\"/sessions\\\\\\\":\\n                sessions = session.get_session_files()\\n                if not sessions:\\n                    console.print(\\\\\\\"[yellow]未找到保存的会话。[/yellow]\\\\\\\")\\n                else:\\n                    print_sessions(sessions)\\n                    if arg:\\n                        try:\\n                            num = int(arg)\\n                            if 1 <= num <= len(sessions):\\n                                _, file_path, _, _ = sessions[num-1]\\n                                session.load_session(file_path)\\n                            else:\\n                                console.print(f\\\\\\\"[red]无效数字，有效范围: 1 ~ {len(sessions)}[/red]\\\\\\\")\\n                        except ValueError:\\n                            console.print(\\\\\\\"[red]请提供数字，例如: /sessions 2[/red]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/history\\\\\\\":\\n                print_history(session)\\n\\n            elif cmd == \\\\\\\"/new\\\\\\\":\\n                session.save_current()\\n                session._init_new_session()\\n                console.print(\\\\\\\"[bold green]已开始新会话。[/bold green]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/save\\\\\\\":\\n                session.save_current()\\n                console.print(f\\\\\\\"[bold green]会话已保存到 {session.session_file.name}[/bold green]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/clear\\\\\\\":\\n                console.clear()\\n                console.print(Panel.fit(\\n                    \\\\\\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\\\\\n\\\\\\\"\\n                    f\\\\\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\\\\\",\\n                    title=\\\\\\\"[bold green]欢迎使用[/bold green]\\\\\\\",\\n                    subtitle=\\\\\\\"输入 /help 查看命令\\\\\\\",\\n                    border_style=\\\\\\\"green\\\\\\\"\\n                ))\\n\\n            elif cmd == \\\\\\\"/help\\\\\\\":\\n                print_help()\\n\\n            else:\\n                console.print(f\\\\\\\"[red]未知命令: {cmd}，输入 /help 获取帮助[/red]\\\\\\\")\\n            continue\\n\\n        # ---------- 正常对话 ----------\\n        if len(session.messages) == 1:\\n            title_candidate = user_input[:20].strip()\\n            session.title = title_candidate if title_candidate else \\\\\\\"未命名会话\\\\\\\"\\n\\n        # 显示用户输入\\n        console.print(f\\\\\\\"[bold blue]你:[/bold blue] {user_input}\\\\\\\")\\n        session.messages.append({\\\\\\\"role\\\\\\\": \\\\\\\"user\\\\\\\", \\\\\\\"content\\\\\\\": user_input})\\n\\n        # 准备流式输出容器\\n        assistant_content = \\\\\\\"\\\\\\\"\\n        tool_calls_dict = {}\\n        \\n        # 使用 Live 显示流式内容\\n        # 我们先创建一个空的 Markdown 对象用于 Live 显示\\n        # 注意：rich.live 需要我们在每次更新时提供新的渲染对象\\n        \\n        # 为了简化流式 Markdown 渲染，我们这里采用逐字打印文本，\\n        # 但为了性能，对于长文本，我们可能只打印最后几行或仅打印纯文本。\\n        # 鉴于 TUI 的复杂性，这里采用一种折中方案：\\n        # 1. 显示一个 \\\\\\\"Thinking...\\\\\\\" 面板\\n        # 2. 流式接收内容\\n        # 3. 最终一次性渲染 Markdown\\n        \\n        with console.status(\\\\\\\"[bold yellow]AI 正在思考...[/bold yellow]\\\\\\\") as status:\\n            try:\\n                stream = client.chat.completions.create(\\n                    model=API_MODEL,\\n                    messages=session.messages,\\n                    tools=tools,\\n                    tool_choice=\\\\\\\"auto\\\\\\\",\\n                    stream=True,\\n                    timeout=60\\n                )\\n            except Exception as e:\\n                console.print(f\\\\\\\"\\\\\\\\n[bold red]API 调用失败: {e}[/bold red]\\\\\\\")\\n                session.messages.pop() # 移除刚才添加的用户消息，因为没得到回应\\n                continue\\n\\n            # 处理流式响应\\n            # 由于 process_stream 是同步打印的，我们需要修改它以配合 Live 或者重新实现\\n            # 为了保持代码结构，我将在 main 中直接处理流式数据，而不是复用 process_stream 的打印逻辑\\n            \\n            content_buffer = \\\\\\\"\\\\\\\"\\n            tool_calls_buffer = {}\\n            \\n            # 用于 Live 显示的渲染对象\\n            # 我们使用 Text 对象来累积内容，因为 Markdown 渲染比较耗时\\n            display_text = Text()\\n            display_text.append(\\\\\\\"AI: \\\\\\\", style=\\\\\\\"bold green\\\\\\\")\\n            \\n            with Live(display_text, refresh_per_second=12, vertical_overflow=\\\\\\\"visible\\\\\\\") as live:\\n                try:\\n                    for chunk in stream:\\n                        if not chunk.choices:\\n                            continue\\n                        delta = chunk.choices[0].delta\\n\\n                        if delta.content:\\n                            char = delta.content\\n                            content_buffer += char\\n                            display_text.append(char)\\n                            live.update(display_text)\\n                            \\n                        if delta.tool_calls:\\n                            for tc in delta.tool_calls:\\n                                idx = tc.index\\n                                if idx not in tool_calls_buffer:\\n                                    tool_calls_buffer[idx] = {\\\\\\\"id\\\\\\\": None, \\\\\\\"name\\\\\\\": None, \\\\\\\"arguments\\\\\\\": \\\\\\\"\\\\\\\"}\\n                                if tc.id:\\n                                    tool_calls_buffer[idx][\\\\\\\"id\\\\\\\"] = tc.id\\n                                if tc.function:\\n                                    if tc.function.name:\\n                                        tool_calls_buffer[idx][\\\\\\\"name\\\\\\\"] = tc.function.name\\n                                    if tc.function.arguments:\\n                                        tool_calls_buffer[idx][\\\\\\\"arguments\\\\\\\"] += tc.function.arguments\\n                                        \\n                except Exception as e:\\n                    live.update(Text(f\\\\\\\"[bold red]流式传输错误: {e}[/bold red]\\\\\\\"))\\n                    console.print()\\n                    break\\n            else:\\n                # 如果循环正常结束（没有 break），更新最终状态\\n                pass\\n\\n        console.print() # 换行\\n            \\n        assistant_message = {\\\\\\\"role\\\\\\\": \\\\\\\"assistant\\\\\\\", \\\\\\\"content\\\\\\\": content_buffer}\\n        tool_calls = []\\n        for idx in sorted(tool_calls_buffer.keys()):\\n            item = tool_calls_buffer[idx]\\n            if item[\\\\\\\"id\\\\\\\"] and item[\\\\\\\"name\\\\\\\"]:\\n                tool_calls.append({\\n                    \\\\\\\"id\\\\\\\": item[\\\\\\\"id\\\\\\\"],\\n                    \\\\\\\"type\\\\\\\": \\\\\\\"function\\\\\\\",\\n                    \\\\\\\"function\\\\\\\": {\\n                        \\\\\\\"name\\\\\\\": item[\\\\\\\"name\\\\\\\"],\\n                        \\\\\\\"arguments\\\\\\\": item[\\\\\\\"arguments\\\\\\\"]\\n                    }\\n                })\\n                \\n        if tool_calls:\\n            assistant_message[\\\\\\\"tool_calls\\\\\\\"] = tool_calls\\n        session.messages.append(assistant_message)\\n\\n        if not tool_calls:\\n            # 如果没有工具调用，直接结束本轮\\n            session.save_current()\\n            continue\\n\\n        # 处理工具调用\\n        for tool_call in tool_calls:\\n            func_name = tool_call[\\\\\\\"function\\\\\\\"][\\\\\\\"name\\\\\\\"]\\n            func_args = json.loads(tool_call[\\\\\\\"function\\\\\\\"][\\\\\\\"arguments\\\\\\\"])\\n\\n            console.print(f\\\\\\\"\\\\\\\\n[bold yellow]调用工具: {func_name}[/bold yellow]\\\\\\\")\\n            console.print(f\\\\\\\"[dim]参数: {func_args}[/dim]\\\\\\\")\\n            \\n            if func_name not in function_map:\\n                result = f\\\\\\\"错误: 未知工具 '{func_name}'\\\\\\\"\\n            else:\\n                try:\\n                    result = function_map[func_name](**func_args)\\n                except Exception as e:\\n                    result = f\\\\\\\"执行工具时发生错误: {e}\\\\\\\"\\n                    \\n            # 显示工具结果摘要\\n            preview = result[:200] + \\\\\\\"...\\\\\\\" if len(result) > 200 else result\\n            console.print(Panel(result if len(result) < 200 else preview, title=f\\\\\\\"[bold green]{func_name} 返回[/bold green]\\\\\\\", border_style=\\\\\\\"green\\\\\\\"))\\n\\n            session.messages.append({\\n                \\\\\\\"role\\\\\\\": \\\\\\\"tool\\\\\\\",\\n                \\\\\\\"tool_call_id\\\\\\\": tool_call[\\\\\\\"id\\\\\\\"],\\n                \\\\\\\"content\\\\\\\": result\\n            })\\n\\n        session.save_current()\\n\\nif __name__ == \\\\\\\"__main__\\\\\\\":\\n    main()\\n\\\\\\\"@ | Set-Content E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_f4458afc6cf44757a49a6666",
+      "content": "[标准错误]\n字符串缺少终止符: \"@。\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\n    + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString"
+    },
+    {
+      "role": "user",
+      "content": "继续"
+    },
+    {
+      "role": "user",
+      "content": "继续"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_c1dd0818376846e6844cdca1",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Set-Content -Path \\\"E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\\\" -Value @\\\"\\nimport os\\nimport json\\nfrom pathlib import Path\\nfrom datetime import datetime\\n\\nfrom rich.console import Console\\nfrom rich.panel import Panel\\nfrom rich.table import Table\\nfrom rich.prompt import Prompt\\nfrom rich.markdown import Markdown\\nfrom rich.live import Live\\nfrom rich.text import Text\\nfrom rich.rule import Rule\\n\\nfrom config import client, API_MODEL, SESSION_DIR\\nfrom tools import tools, function_map\\nfrom session_manager import SessionManager\\n\\nconsole = Console()\\n\\ndef print_help():\\n    help_text = \\\\\\\"\\\\\\\"\\\\\\\"\\n**可用命令:**\\n\\n- `/sessions`          : 列出所有已保存的会话\\n- `/sessions <num>`    : 通过编号加载特定会话\\n- `/history`           : 查看完整对话历史\\n- `/new`               : 开始新会话（自动保存当前会话）\\n- `/save`              : 手动保存当前会话\\n- `/clear`             : 清屏\\n- `/exit` 或 `/quit`   : 退出并保存当前会话\\n\\\\\\\"\\\\\\\"\\\\\\\"\\n    console.print(Panel(help_text.strip(), title=\\\\\\\"[bold blue]帮助[/bold blue]\\\\\\\", border_style=\\\\\\\"blue\\\\\\\"))\\n\\ndef print_sessions(sessions):\\n    table = Table(title=\\\\\\\"[bold green]已保存的会话[/bold green]\\\\\\\", show_header=True, header_style=\\\\\\\"bold magenta\\\\\\\")\\n    table.add_column(\\\\\\\"#\\\\\\\", style=\\\\\\\"dim\\\\\\\", width=3)\\n    table.add_column(\\\\\\\"标题\\\\\\\", style=\\\\\\\"cyan\\\\\\\")\\n    table.add_column(\\\\\\\"更新时间\\\\\\\", style=\\\\\\\"yellow\\\\\\\")\\n    \\n    for idx, path, title, updated in sessions:\\n        try:\\n            dt = datetime.fromisoformat(updated)\\n            time_str = dt.strftime(\\\\\\\"%Y-%m-%d %H:%M\\\\\\\")\\n        except:\\n            time_str = updated[:19] if len(updated) > 19 else updated\\n            \\n        table.add_row(str(idx), title, time_str)\\n        \\n    console.print(table)\\n\\ndef print_history(session):\\n    history = [m for m in session.messages if m[\\\\\\\"role\\\\\\\"] != \\\\\\\"system\\\\\\\"]\\n    if not history:\\n        console.print(\\\\\\\"[yellow]无对话历史。[/yellow]\\\\\\\")\\n        return\\n\\n    console.print(Rule(\\\\\\\"[bold cyan]对话历史[/bold cyan]\\\\\\\", style=\\\\\\\"cyan\\\\\\\"))\\n    \\n    for i, msg in enumerate(history, 1):\\n        role = msg[\\\\\\\"role\\\\\\\"]\\n        content = msg.get(\\\\\\\"content\\\\\\\", \\\\\\\"\\\\\\\")\\n        \\n        if role == \\\\\\\"user\\\\\\\":\\n            style = \\\\\\\"bold blue\\\\\\\"\\n            prefix = \\\\\\\"用户\\\\\\\"\\n        elif role == \\\\\\\"assistant\\\\\\\":\\n            style = \\\\\\\"bold green\\\\\\\"\\n            prefix = \\\\\\\"AI\\\\\\\"\\n        elif role == \\\\\\\"tool\\\\\\\":\\n            style = \\\\\\\"bold yellow\\\\\\\"\\n            prefix = \\\\\\\"工具\\\\\\\"\\n        else:\\n            style = \\\\\\\"bold white\\\\\\\"\\n            prefix = role\\n            \\n        if len(content) > 500:\\n            display_content = content[:500] + \\\\\\\"\\\\n[内容过长，已截断...]\\\\\\\"\\n        else:\\n            display_content = content\\n            \\n        console.print(f\\\\\\\"[bold]{i}. {prefix}:[/bold] {display_content}\\\\\\\")\\n        \\n    console.print(Rule(style=\\\\\\\"cyan\\\\\\\"))\\n\\ndef main():\\n    session = SessionManager()\\n    \\n    console.clear()\\n    console.print(Panel.fit(\\n        \\\\\\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\\\\\"\\n        \\\\\\\"[dim]Powered by Rich & OpenAI API[/dim]\\\\n\\\\\\\"\\n        f\\\\\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\\\\\",\\n        title=\\\\\\\"[bold green]欢迎使用[/bold green]\\\\\\\",\\n        subtitle=\\\\\\\"输入 /help 查看命令\\\\\\\",\\n        border_style=\\\\\\\"green\\\\\\\"\\n    ))\\n    \\n    while True:\\n        try:\\n            user_input = Prompt.ask(\\\\\\\"[bold blue]你[/bold blue]\\\\\\\")\\n        except (EOFError, KeyboardInterrupt):\\n            console.print(\\\"\\\\n[yellow]退出中...[/yellow]\\\")\\n            break\\n            \\n        if not user_input:\\n            continue\\n\\n        if user_input.startswith(\\\\\\\"/\\\\\\\"):\\n            parts = user_input.split(maxsplit=1)\\n            cmd = parts[0].lower()\\n            arg = parts[1] if len(parts) > 1 else None\\n\\n            if cmd in [\\\\\\\"/exit\\\\\\\", \\\\\\\"/quit\\\\\\\"]:\\n                session.save_current()\\n                console.print(\\\\\\\"[bold red]再见！[/bold red]\\\\\\\")\\n                break\\n\\n            elif cmd == \\\\\\\"/sessions\\\\\\\":\\n                sessions = session.get_session_files()\\n                if not sessions:\\n                    console.print(\\\\\\\"[yellow]未找到保存的会话。[/yellow]\\\\\\\")\\n                else:\\n                    print_sessions(sessions)\\n                    if arg:\\n                        try:\\n                            num = int(arg)\\n                            if 1 <= num <= len(sessions):\\n                                _, file_path, _, _ = sessions[num-1]\\n                                session.load_session(file_path)\\n                            else:\\n                                console.print(f\\\\\\\"[red]无效数字，有效范围: 1 ~ {len(sessions)}[/red]\\\\\\\")\\n                        except ValueError:\\n                            console.print(\\\\\\\"[red]请提供数字，例如: /sessions 2[/red]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/history\\\\\\\":\\n                print_history(session)\\n\\n            elif cmd == \\\\\\\"/new\\\\\\\":\\n                session.save_current()\\n                session._init_new_session()\\n                console.print(\\\\\\\"[bold green]已开始新会话。[/bold green]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/save\\\\\\\":\\n                session.save_current()\\n                console.print(f\\\\\\\"[bold green]会话已保存到 {session.session_file.name}[/bold green]\\\\\\\")\\n\\n            elif cmd == \\\\\\\"/clear\\\\\\\":\\n                console.clear()\\n                console.print(Panel.fit(\\n                    \\\\\\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\\\\\"\\n                    f\\\\\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\\\\\",\\n                    title=\\\\\\\"[bold green]欢迎使用[/bold green]\\\\\\\",\\n                    subtitle=\\\\\\\"输入 /help 查看命令\\\\\\\",\\n                    border_style=\\\\\\\"green\\\\\\\"\\n                ))\\n\\n            elif cmd == \\\\\\\"/help\\\\\\\":\\n                print_help()\\n\\n            else:\\n                console.print(f\\\\\\\"[red]未知命令: {cmd}，输入 /help 获取帮助[/red]\\\\\\\")\\n            continue\\n\\n        if len(session.messages) == 1:\\n            title_candidate = user_input[:20].strip()\\n            session.title = title_candidate if title_candidate else \\\\\\\"未命名会话\\\\\\\"\\n\\n        console.print(f\\\\\\\"[bold blue]你:[/bold blue] {user_input}\\\\\\\")\\n        session.messages.append({\\\\\\\"role\\\\\\\": \\\\\\\"user\\\\\\\", \\\\\\\"content\\\\\\\": user_input})\\n\\n        assistant_content = \\\\\\\"\\\\\\\"\\n        tool_calls_dict = {}\\n        \\n        display_text = Text()\\n        display_text.append(\\\\\\\"AI: \\\\\\\", style=\\\\\\\"bold green\\\\\\\")\\n        \\n        with console.status(\\\\\\\"[bold yellow]AI 正在思考...[/bold yellow]\\\\\\\") as status:\\n            try:\\n                stream = client.chat.completions.create(\\n                    model=API_MODEL,\\n                    messages=session.messages,\\n                    tools=tools,\\n                    tool_choice=\\\\\\\"auto\\\\\\\",\\n                    stream=True,\\n                    timeout=60\\n                )\\n            except Exception as e:\\n                console.print(f\\\\\\\"\\\\n[bold red]API 调用失败: {e}[/bold red]\\\\\\\")\\n                session.messages.pop()\\n                continue\\n\\n            content_buffer = \\\\\\\"\\\\\\\"\\n            tool_calls_buffer = {}\\n            \\n            with Live(display_text, refresh_per_second=12, vertical_overflow=\\\\\\\"visible\\\\\\\") as live:\\n                try:\\n                    for chunk in stream:\\n                        if not chunk.choices:\\n                            continue\\n                        delta = chunk.choices[0].delta\\n\\n                        if delta.content:\\n                            char = delta.content\\n                            content_buffer += char\\n                            display_text.append(char)\\n                            live.update(display_text)\\n                            \\n                        if delta.tool_calls:\\n                            for tc in delta.tool_calls:\\n                                idx = tc.index\\n                                if idx not in tool_calls_buffer:\\n                                    tool_calls_buffer[idx] = {\\\\\\\"id\\\\\\\": None, \\\\\\\"name\\\\\\\": None, \\\\\\\"arguments\\\\\\\": \\\\\\\"\\\\\\\"}\\n                                if tc.id:\\n                                    tool_calls_buffer[idx][\\\\\\\"id\\\\\\\"] = tc.id\\n                                if tc.function:\\n                                    if tc.function.name:\\n                                        tool_calls_buffer[idx][\\\\\\\"name\\\\\\\"] = tc.function.name\\n                                    if tc.function.arguments:\\n                                        tool_calls_buffer[idx][\\\\\\\"arguments\\\\\\\"] += tc.function.arguments\\n                                        \\n                except Exception as e:\\n                    live.update(Text(f\\\\\\\"[bold red]流式传输错误: {e}[/bold red]\\\\\\\"))\\n                    console.print()\\n                    break\\n\\n        console.print()\\n            \\n        assistant_message = {\\\\\\\"role\\\\\\\": \\\\\\\"assistant\\\\\\\", \\\\\\\"content\\\\\\\": content_buffer}\\n        tool_calls = []\\n        for idx in sorted(tool_calls_buffer.keys()):\\n            item = tool_calls_buffer[idx]\\n            if item[\\\\\\\"id\\\\\\\"] and item[\\\\\\\"name\\\\\\\"]:\\n                tool_calls.append({\\n                    \\\\\\\"id\\\\\\\": item[\\\\\\\"id\\\\\\\"],\\n                    \\\\\\\"type\\\\\\\": \\\\\\\"function\\\\\\\",\\n                    \\\\\\\"function\\\\\\\": {\\n                        \\\\\\\"name\\\\\\\": item[\\\\\\\"name\\\\\\\"],\\n                        \\\\\\\"arguments\\\\\\\": item[\\\\\\\"arguments\\\\\\\"]\\n                    }\\n                })\\n                \\n        if tool_calls:\\n            assistant_message[\\\\\\\"tool_calls\\\\\\\"] = tool_calls\\n        session.messages.append(assistant_message)\\n\\n        if not tool_calls:\\n            session.save_current()\\n            continue\\n\\n        for tool_call in tool_calls:\\n            func_name = tool_call[\\\\\\\"function\\\\\\\"][\\\\\\\"name\\\\\\\"]\\n            func_args = json.loads(tool_call[\\\\\\\"function\\\\\\\"][\\\\\\\"arguments\\\\\\\"])\\n\\n            console.print(f\\\\\\\"\\\\n[bold yellow]调用工具: {func_name}[/bold yellow]\\\\\\\")\\n            console.print(f\\\\\\\"[dim]参数: {func_args}[/dim]\\\\\\\")\\n            \\n            if func_name not in function_map:\\n                result = f\\\\\\\"错误: 未知工具 '{func_name}'\\\\\\\"\\n            else:\\n                try:\\n                    result = function_map[func_name](**func_args)\\n                except Exception as e:\\n                    result = f\\\\\\\"执行工具时发生错误: {e}\\\\\\\"\\n                    \\n            preview = result[:200] + \\\\\\\"...\\\\\\\" if len(result) > 200 else result\\n            console.print(Panel(result if len(result) < 200 else preview, title=f\\\\\\\"[bold green]{func_name} 返回[/bold green]\\\\\\\", border_style=\\\\\\\"green\\\\\\\"))\\n\\n            session.messages.append({\\n                \\\\\\\"role\\\\\\\": \\\\\\\"tool\\\\\\\",\\n                \\\\\\\"tool_call_id\\\\\\\": tool_call[\\\\\\\"id\\\\\\\"],\\n                \\\\\\\"content\\\\\\\": result\\n            })\\n\\n        session.save_current()\\n\\nif __name__ == \\\\\\\"__main__\\\\\\\":\\n    main()\\n\\\"@\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c1dd0818376846e6844cdca1",
+      "content": "[命令执行成功，无输出]"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_c772d85a54b5415285d4fd4f",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c772d85a54b5415285d4fd4f",
+      "content": "[标准错误]\n  File \"E:\\Users\\Administrator\\My_Agent\\AI.py\", line 22\n    help_text = \\\"\\\"\\\"\n                 ^\nSyntaxError: unexpected character after line continuation character"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_aa1b50775de84960b350a59d",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"Set-Content -Path \\\"E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\\\" -Value @'\\nimport os\\nimport json\\nfrom pathlib import Path\\nfrom datetime import datetime\\n\\nfrom rich.console import Console\\nfrom rich.panel import Panel\\nfrom rich.table import Table\\nfrom rich.prompt import Prompt\\nfrom rich.markdown import Markdown\\nfrom rich.live import Live\\nfrom rich.text import Text\\nfrom rich.rule import Rule\\n\\nfrom config import client, API_MODEL, SESSION_DIR\\nfrom tools import tools, function_map\\nfrom session_manager import SessionManager\\n\\nconsole = Console()\\n\\ndef print_help():\\n    help_text = \\\"\\\"\\\"\\n**可用命令:**\\n\\n- `/sessions`          : 列出所有已保存的会话\\n- `/sessions <num>`    : 通过编号加载特定会话\\n- `/history`           : 查看完整对话历史\\n- `/new`               : 开始新会话（自动保存当前会话）\\n- `/save`              : 手动保存当前会话\\n- `/clear`             : 清屏\\n- `/exit` 或 `/quit`   : 退出并保存当前会话\\n\\\"\\\"\\\"\\n    console.print(Panel(help_text.strip(), title=\\\"[bold blue]帮助[/bold blue]\\\", border_style=\\\"blue\\\"))\\n\\ndef print_sessions(sessions):\\n    table = Table(title=\\\"[bold green]已保存的会话[/bold green]\\\", show_header=True, header_style=\\\"bold magenta\\\")\\n    table.add_column(\\\"#\\\", style=\\\"dim\\\", width=3)\\n    table.add_column(\\\"标题\\\", style=\\\"cyan\\\")\\n    table.add_column(\\\"更新时间\\\", style=\\\"yellow\\\")\\n    \\n    for idx, path, title, updated in sessions:\\n        try:\\n            dt = datetime.fromisoformat(updated)\\n            time_str = dt.strftime(\\\"%Y-%m-%d %H:%M\\\")\\n        except:\\n            time_str = updated[:19] if len(updated) > 19 else updated\\n            \\n        table.add_row(str(idx), title, time_str)\\n        \\n    console.print(table)\\n\\ndef print_history(session):\\n    history = [m for m in session.messages if m[\\\"role\\\"] != \\\"system\\\"]\\n    if not history:\\n        console.print(\\\"[yellow]无对话历史。[/yellow]\\\")\\n        return\\n\\n    console.print(Rule(\\\"[bold cyan]对话历史[/bold cyan]\\\", style=\\\"cyan\\\"))\\n    \\n    for i, msg in enumerate(history, 1):\\n        role = msg[\\\"role\\\"]\\n        content = msg.get(\\\"content\\\", \\\"\\\")\\n        \\n        if role == \\\"user\\\":\\n            style = \\\"bold blue\\\"\\n            prefix = \\\"用户\\\"\\n        elif role == \\\"assistant\\\":\\n            style = \\\"bold green\\\"\\n            prefix = \\\"AI\\\"\\n        elif role == \\\"tool\\\":\\n            style = \\\"bold yellow\\\"\\n            prefix = \\\"工具\\\"\\n        else:\\n            style = \\\"bold white\\\"\\n            prefix = role\\n            \\n        if len(content) > 500:\\n            display_content = content[:500] + \\\"\\\\n[内容过长，已截断...]\\\"\\n        else:\\n            display_content = content\\n            \\n        console.print(f\\\"[bold]{i}. {prefix}:[/bold] {display_content}\\\")\\n        \\n    console.print(Rule(style=\\\"cyan\\\"))\\n\\ndef main():\\n    session = SessionManager()\\n    \\n    console.clear()\\n    console.print(Panel.fit(\\n        \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n        \\\"[dim]Powered by Rich & OpenAI API[/dim]\\\\n\\\"\\n        f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n        title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n        subtitle=\\\"输入 /help 查看命令\\\",\\n        border_style=\\\"green\\\"\\n    ))\\n    \\n    while True:\\n        try:\\n            user_input = Prompt.ask(\\\"[bold blue]你[/bold blue]\\\")\\n        except (EOFError, KeyboardInterrupt):\\n            console.print(\\\"\\\\n[yellow]退出中...[/yellow]\\\")\\n            break\\n            \\n        if not user_input:\\n            continue\\n\\n        if user_input.startswith(\\\"/\\\"):\\n            parts = user_input.split(maxsplit=1)\\n            cmd = parts[0].lower()\\n            arg = parts[1] if len(parts) > 1 else None\\n\\n            if cmd in [\\\"/exit\\\", \\\"/quit\\\"]:\\n                session.save_current()\\n                console.print(\\\"[bold red]再见！[/bold red]\\\")\\n                break\\n\\n            elif cmd == \\\"/sessions\\\":\\n                sessions = session.get_session_files()\\n                if not sessions:\\n                    console.print(\\\"[yellow]未找到保存的会话。[/yellow]\\\")\\n                else:\\n                    print_sessions(sessions)\\n                    if arg:\\n                        try:\\n                            num = int(arg)\\n                            if 1 <= num <= len(sessions):\\n                                _, file_path, _, _ = sessions[num-1]\\n                                session.load_session(file_path)\\n                            else:\\n                                console.print(f\\\"[red]无效数字，有效范围: 1 ~ {len(sessions)}[/red]\\\")\\n                        except ValueError:\\n                            console.print(\\\"[red]请提供数字，例如: /sessions 2[/red]\\\")\\n\\n            elif cmd == \\\"/history\\\":\\n                print_history(session)\\n\\n            elif cmd == \\\"/new\\\":\\n                session.save_current()\\n                session._init_new_session()\\n                console.print(\\\"[bold green]已开始新会话。[/bold green]\\\")\\n\\n            elif cmd == \\\"/save\\\":\\n                session.save_current()\\n                console.print(f\\\"[bold green]会话已保存到 {session.session_file.name}[/bold green]\\\")\\n\\n            elif cmd == \\\"/clear\\\":\\n                console.clear()\\n                console.print(Panel.fit(\\n                    \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n                    f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n                    title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n                    subtitle=\\\"输入 /help 查看命令\\\",\\n                    border_style=\\\"green\\\"\\n                ))\\n\\n            elif cmd == \\\"/help\\\":\\n                print_help()\\n\\n            else:\\n                console.print(f\\\"[red]未知命令: {cmd}，输入 /help 获取帮助[/red]\\\")\\n            continue\\n\\n        if len(session.messages) == 1:\\n            title_candidate = user_input[:20].strip()\\n            session.title = title_candidate if title_candidate else \\\"未命名会话\\\"\\n\\n        console.print(f\\\"[bold blue]你:[/bold blue] {user_input}\\\")\\n        session.messages.append({\\\"role\\\": \\\"user\\\", \\\"content\\\": user_input})\\n\\n        assistant_content = \\\"\\\"\\n        tool_calls_dict = {}\\n        \\n        display_text = Text()\\n        display_text.append(\\\"AI: \\\", style=\\\"bold green\\\")\\n        \\n        with console.status(\\\"[bold yellow]AI 正在思考...[/bold yellow]\\\") as status:\\n            try:\\n                stream = client.chat.completions.create(\\n                    model=API_MODEL,\\n                    messages=session.messages,\\n                    tools=tools,\\n                    tool_choice=\\\"auto\\\",\\n                    stream=True,\\n                    timeout=60\\n                )\\n            except Exception as e:\\n                console.print(f\\\"\\\\n[bold red]API 调用失败: {e}[/bold red]\\\")\\n                session.messages.pop()\\n                continue\\n\\n            content_buffer = \\\"\\\"\\n            tool_calls_buffer = {}\\n            \\n            with Live(display_text, refresh_per_second=12, vertical_overflow=\\\"visible\\\") as live:\\n                try:\\n                    for chunk in stream:\\n                        if not chunk.choices:\\n                            continue\\n                        delta = chunk.choices[0].delta\\n\\n                        if delta.content:\\n                            char = delta.content\\n                            content_buffer += char\\n                            display_text.append(char)\\n                            live.update(display_text)\\n                            \\n                        if delta.tool_calls:\\n                            for tc in delta.tool_calls:\\n                                idx = tc.index\\n                                if idx not in tool_calls_buffer:\\n                                    tool_calls_buffer[idx] = {\\\"id\\\": None, \\\"name\\\": None, \\\"arguments\\\": \\\"\\\"}\\n                                if tc.id:\\n                                    tool_calls_buffer[idx][\\\"id\\\"] = tc.id\\n                                if tc.function:\\n                                    if tc.function.name:\\n                                        tool_calls_buffer[idx][\\\"name\\\"] = tc.function.name\\n                                    if tc.function.arguments:\\n                                        tool_calls_buffer[idx][\\\"arguments\\\"] += tc.function.arguments\\n                                        \\n                except Exception as e:\\n                    live.update(Text(f\\\"[bold red]流式传输错误: {e}[/bold red]\\\"))\\n                    console.print()\\n                    break\\n\\n        console.print()\\n            \\n        assistant_message = {\\\"role\\\": \\\"assistant\\\", \\\"content\\\": content_buffer}\\n        tool_calls = []\\n        for idx in sorted(tool_calls_buffer.keys()):\\n            item = tool_calls_buffer[idx]\\n            if item[\\\"id\\\"] and item[\\\"name\\\"]:\\n                tool_calls.append({\\n                    \\\"id\\\": item[\\\"id\\\"],\\n                    \\\"type\\\": \\\"function\\\",\\n                    \\\"function\\\": {\\n                        \\\"name\\\": item[\\\"name\\\"],\\n                        \\\"arguments\\\": item[\\\"arguments\\\"]\\n                    }\\n                })\\n                \\n        if tool_calls:\\n            assistant_message[\\\"tool_calls\\\"] = tool_calls\\n        session.messages.append(assistant_message)\\n\\n        if not tool_calls:\\n            session.save_current()\\n            continue\\n\\n        for tool_call in tool_calls:\\n            func_name = tool_call[\\\"function\\\"][\\\"name\\\"]\\n            func_args = json.loads(tool_call[\\\"function\\\"][\\\"arguments\\\"])\\n\\n            console.print(f\\\"\\\\n[bold yellow]调用工具: {func_name}[/bold yellow]\\\")\\n            console.print(f\\\"[dim]参数: {func_args}[/dim]\\\")\\n            \\n            if func_name not in function_map:\\n                result = f\\\"错误: 未知工具 '{func_name}'\\\"\\n            else:\\n                try:\\n                    result = function_map[func_name](**func_args)\\n                except Exception as e:\\n                    result = f\\\"执行工具时发生错误: {e}\\\"\\n                    \\n            preview = result[:200] + \\\"...\\\" if len(result) > 200 else result\\n            console.print(Panel(result if len(result) < 200 else preview, title=f\\\"[bold green]{func_name} 返回[/bold green]\\\", border_style=\\\"green\\\"))\\n\\n            session.messages.append({\\n                \\\"role\\\": \\\"tool\\\",\\n                \\\"tool_call_id\\\": tool_call[\\\"id\\\"],\\n                \\\"content\\\": result\\n            })\\n\\n        session.save_current()\\n\\nif __name__ == \\\"__main__\\\":\\n    main()\\n'@\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_aa1b50775de84960b350a59d",
+      "content": "[命令执行成功，无输出]"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_a005d53ab229434bbdc8764b",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_a005d53ab229434bbdc8764b",
+      "content": "[标准错误]\nSyntaxError: Non-UTF-8 code starting with '\\xbf' in file E:\\Users\\Administrator\\My_Agent\\AI.py on line 23, but no encoding declared; see https://peps.python.org/pep-0263/ for details"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_c3b7f09414964a25ab60472e",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8'; Set-Content -Path \\\"E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\\\" -Value @'\\nimport os\\nimport json\\nfrom pathlib import Path\\nfrom datetime import datetime\\n\\nfrom rich.console import Console\\nfrom rich.panel import Panel\\nfrom rich.table import Table\\nfrom rich.prompt import Prompt\\nfrom rich.markdown import Markdown\\nfrom rich.live import Live\\nfrom rich.text import Text\\nfrom rich.rule import Rule\\n\\nfrom config import client, API_MODEL, SESSION_DIR\\nfrom tools import tools, function_map\\nfrom session_manager import SessionManager\\n\\nconsole = Console()\\n\\ndef print_help():\\n    help_text = \\\"\\\"\\\"\\n**可用命令:**\\n\\n- `/sessions`          : 列出所有已保存的会话\\n- `/sessions <num>`    : 通过编号加载特定会话\\n- `/history`           : 查看完整对话历史\\n- `/new`               : 开始新会话（自动保存当前会话）\\n- `/save`              : 手动保存当前会话\\n- `/clear`             : 清屏\\n- `/exit` 或 `/quit`   : 退出并保存当前会话\\n\\\"\\\"\\\"\\n    console.print(Panel(help_text.strip(), title=\\\"[bold blue]帮助[/bold blue]\\\", border_style=\\\"blue\\\"))\\n\\ndef print_sessions(sessions):\\n    table = Table(title=\\\"[bold green]已保存的会话[/bold green]\\\", show_header=True, header_style=\\\"bold magenta\\\")\\n    table.add_column(\\\"#\\\", style=\\\"dim\\\", width=3)\\n    table.add_column(\\\"标题\\\", style=\\\"cyan\\\")\\n    table.add_column(\\\"更新时间\\\", style=\\\"yellow\\\")\\n    \\n    for idx, path, title, updated in sessions:\\n        try:\\n            dt = datetime.fromisoformat(updated)\\n            time_str = dt.strftime(\\\"%Y-%m-%d %H:%M\\\")\\n        except:\\n            time_str = updated[:19] if len(updated) > 19 else updated\\n            \\n        table.add_row(str(idx), title, time_str)\\n        \\n    console.print(table)\\n\\ndef print_history(session):\\n    history = [m for m in session.messages if m[\\\"role\\\"] != \\\"system\\\"]\\n    if not history:\\n        console.print(\\\"[yellow]无对话历史。[/yellow]\\\")\\n        return\\n\\n    console.print(Rule(\\\"[bold cyan]对话历史[/bold cyan]\\\", style=\\\"cyan\\\"))\\n    \\n    for i, msg in enumerate(history, 1):\\n        role = msg[\\\"role\\\"]\\n        content = msg.get(\\\"content\\\", \\\"\\\")\\n        \\n        if role == \\\"user\\\":\\n            style = \\\"bold blue\\\"\\n            prefix = \\\"用户\\\"\\n        elif role == \\\"assistant\\\":\\n            style = \\\"bold green\\\"\\n            prefix = \\\"AI\\\"\\n        elif role == \\\"tool\\\":\\n            style = \\\"bold yellow\\\"\\n            prefix = \\\"工具\\\"\\n        else:\\n            style = \\\"bold white\\\"\\n            prefix = role\\n            \\n        if len(content) > 500:\\n            display_content = content[:500] + \\\"\\\\n[内容过长，已截断...]\\\"\\n        else:\\n            display_content = content\\n            \\n        console.print(f\\\"[bold]{i}. {prefix}:[/bold] {display_content}\\\")\\n        \\n    console.print(Rule(style=\\\"cyan\\\"))\\n\\ndef main():\\n    session = SessionManager()\\n    \\n    console.clear()\\n    console.print(Panel.fit(\\n        \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n        \\\"[dim]Powered by Rich & OpenAI API[/dim]\\\\n\\\"\\n        f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n        title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n        subtitle=\\\"输入 /help 查看命令\\\",\\n        border_style=\\\"green\\\"\\n    ))\\n    \\n    while True:\\n        try:\\n            user_input = Prompt.ask(\\\"[bold blue]你[/bold blue]\\\")\\n        except (EOFError, KeyboardInterrupt):\\n            console.print(\\\"\\\\n[yellow]退出中...[/yellow]\\\")\\n            break\\n            \\n        if not user_input:\\n            continue\\n\\n        if user_input.startswith(\\\"/\\\"):\\n            parts = user_input.split(maxsplit=1)\\n            cmd = parts[0].lower()\\n            arg = parts[1] if len(parts) > 1 else None\\n\\n            if cmd in [\\\"/exit\\\", \\\"/quit\\\"]:\\n                session.save_current()\\n                console.print(\\\"[bold red]再见！[/bold red]\\\")\\n                break\\n\\n            elif cmd == \\\"/sessions\\\":\\n                sessions = session.get_session_files()\\n                if not sessions:\\n                    console.print(\\\"[yellow]未找到保存的会话。[/yellow]\\\")\\n                else:\\n                    print_sessions(sessions)\\n                    if arg:\\n                        try:\\n                            num = int(arg)\\n                            if 1 <= num <= len(sessions):\\n                                _, file_path, _, _ = sessions[num-1]\\n                                session.load_session(file_path)\\n                            else:\\n                                console.print(f\\\"[red]无效数字，有效范围: 1 ~ {len(sessions)}[/red]\\\")\\n                        except ValueError:\\n                            console.print(\\\"[red]请提供数字，例如: /sessions 2[/red]\\\")\\n\\n            elif cmd == \\\"/history\\\":\\n                print_history(session)\\n\\n            elif cmd == \\\"/new\\\":\\n                session.save_current()\\n                session._init_new_session()\\n                console.print(\\\"[bold green]已开始新会话。[/bold green]\\\")\\n\\n            elif cmd == \\\"/save\\\":\\n                session.save_current()\\n                console.print(f\\\"[bold green]会话已保存到 {session.session_file.name}[/bold green]\\\")\\n\\n            elif cmd == \\\"/clear\\\":\\n                console.clear()\\n                console.print(Panel.fit(\\n                    \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n                    f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n                    title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n                    subtitle=\\\"输入 /help 查看命令\\\",\\n                    border_style=\\\"green\\\"\\n                ))\\n\\n            elif cmd == \\\"/help\\\":\\n                print_help()\\n\\n            else:\\n                console.print(f\\\"[red]未知命令: {cmd}，输入 /help 获取帮助[/red]\\\")\\n            continue\\n\\n        if len(session.messages) == 1:\\n            title_candidate = user_input[:20].strip()\\n            session.title = title_candidate if title_candidate else \\\"未命名会话\\\"\\n\\n        console.print(f\\\"[bold blue]你:[/bold blue] {user_input}\\\")\\n        session.messages.append({\\\"role\\\": \\\"user\\\", \\\"content\\\": user_input})\\n\\n        assistant_content = \\\"\\\"\\n        tool_calls_dict = {}\\n        \\n        display_text = Text()\\n        display_text.append(\\\"AI: \\\", style=\\\"bold green\\\")\\n        \\n        with console.status(\\\"[bold yellow]AI 正在思考...[/bold yellow]\\\") as status:\\n            try:\\n                stream = client.chat.completions.create(\\n                    model=API_MODEL,\\n                    messages=session.messages,\\n                    tools=tools,\\n                    tool_choice=\\\"auto\\\",\\n                    stream=True,\\n                    timeout=60\\n                )\\n            except Exception as e:\\n                console.print(f\\\"\\\\n[bold red]API 调用失败: {e}[/bold red]\\\")\\n                session.messages.pop()\\n                continue\\n\\n            content_buffer = \\\"\\\"\\n            tool_calls_buffer = {}\\n            \\n            with Live(display_text, refresh_per_second=12, vertical_overflow=\\\"visible\\\") as live:\\n                try:\\n                    for chunk in stream:\\n                        if not chunk.choices:\\n                            continue\\n                        delta = chunk.choices[0].delta\\n\\n                        if delta.content:\\n                            char = delta.content\\n                            content_buffer += char\\n                            display_text.append(char)\\n                            live.update(display_text)\\n                            \\n                        if delta.tool_calls:\\n                            for tc in delta.tool_calls:\\n                                idx = tc.index\\n                                if idx not in tool_calls_buffer:\\n                                    tool_calls_buffer[idx] = {\\\"id\\\": None, \\\"name\\\": None, \\\"arguments\\\": \\\"\\\"}\\n                                if tc.id:\\n                                    tool_calls_buffer[idx][\\\"id\\\"] = tc.id\\n                                if tc.function:\\n                                    if tc.function.name:\\n                                        tool_calls_buffer[idx][\\\"name\\\"] = tc.function.name\\n                                    if tc.function.arguments:\\n                                        tool_calls_buffer[idx][\\\"arguments\\\"] += tc.function.arguments\\n                                        \\n                except Exception as e:\\n                    live.update(Text(f\\\"[bold red]流式传输错误: {e}[/bold red]\\\"))\\n                    console.print()\\n                    break\\n\\n        console.print()\\n            \\n        assistant_message = {\\\"role\\\": \\\"assistant\\\", \\\"content\\\": content_buffer}\\n        tool_calls = []\\n        for idx in sorted(tool_calls_buffer.keys()):\\n            item = tool_calls_buffer[idx]\\n            if item[\\\"id\\\"] and item[\\\"name\\\"]:\\n                tool_calls.append({\\n                    \\\"id\\\": item[\\\"id\\\"],\\n                    \\\"type\\\": \\\"function\\\",\\n                    \\\"function\\\": {\\n                        \\\"name\\\": item[\\\"name\\\"],\\n                        \\\"arguments\\\": item[\\\"arguments\\\"]\\n                    }\\n                })\\n                \\n        if tool_calls:\\n            assistant_message[\\\"tool_calls\\\"] = tool_calls\\n        session.messages.append(assistant_message)\\n\\n        if not tool_calls:\\n            session.save_current()\\n            continue\\n\\n        for tool_call in tool_calls:\\n            func_name = tool_call[\\\"function\\\"][\\\"name\\\"]\\n            func_args = json.loads(tool_call[\\\"function\\\"][\\\"arguments\\\"])\\n\\n            console.print(f\\\"\\\\n[bold yellow]调用工具: {func_name}[/bold yellow]\\\")\\n            console.print(f\\\"[dim]参数: {func_args}[/dim]\\\")\\n            \\n            if func_name not in function_map:\\n                result = f\\\"错误: 未知工具 '{func_name}'\\\"\\n            else:\\n                try:\\n                    result = function_map[func_name](**func_args)\\n                except Exception as e:\\n                    result = f\\\"执行工具时发生错误: {e}\\\"\\n                    \\n            preview = result[:200] + \\\"...\\\" if len(result) > 200 else result\\n            console.print(Panel(result if len(result) < 200 else preview, title=f\\\"[bold green]{func_name} 返回[/bold green]\\\", border_style=\\\"green\\\"))\\n\\n            session.messages.append({\\n                \\\"role\\\": \\\"tool\\\",\\n                \\\"tool_call_id\\\": tool_call[\\\"id\\\"],\\n                \\\"content\\\": result\\n            })\\n\\n        session.save_current()\\n\\nif __name__ == \\\"__main__\\\":\\n    main()\\n'@\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c3b7f09414964a25ab60472e",
+      "content": "[命令执行成功，无输出]"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_bae460a5babc4009b9d10da6",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_bae460a5babc4009b9d10da6",
+      "content": "[标准错误]\nSyntaxError: Non-UTF-8 code starting with '\\xbf' in file E:\\Users\\Administrator\\My_Agent\\AI.py on line 23, but no encoding declared; see https://peps.python.org/pep-0263/ for details"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_94347d44c179497189ba04a6",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8-bom'; Set-Content -Path \\\"E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\\\" -Value @'\\n# -*- coding: utf-8 -*-\\nimport os\\nimport json\\nfrom pathlib import Path\\nfrom datetime import datetime\\n\\nfrom rich.console import Console\\nfrom rich.panel import Panel\\nfrom rich.table import Table\\nfrom rich.prompt import Prompt\\nfrom rich.markdown import Markdown\\nfrom rich.live import Live\\nfrom rich.text import Text\\nfrom rich.rule import Rule\\n\\nfrom config import client, API_MODEL, SESSION_DIR\\nfrom tools import tools, function_map\\nfrom session_manager import SessionManager\\n\\nconsole = Console()\\n\\ndef print_help():\\n    help_text = \\\"\\\"\\\"\\n**可用命令:**\\n\\n- `/sessions`          : 列出所有已保存的会话\\n- `/sessions <num>`    : 通过编号加载特定会话\\n- `/history`           : 查看完整对话历史\\n- `/new`               : 开始新会话（自动保存当前会话）\\n- `/save`              : 手动保存当前会话\\n- `/clear`             : 清屏\\n- `/exit` 或 `/quit`   : 退出并保存当前会话\\n\\\"\\\"\\\"\\n    console.print(Panel(help_text.strip(), title=\\\"[bold blue]帮助[/bold blue]\\\", border_style=\\\"blue\\\"))\\n\\ndef print_sessions(sessions):\\n    table = Table(title=\\\"[bold green]已保存的会话[/bold green]\\\", show_header=True, header_style=\\\"bold magenta\\\")\\n    table.add_column(\\\"#\\\", style=\\\"dim\\\", width=3)\\n    table.add_column(\\\"标题\\\", style=\\\"cyan\\\")\\n    table.add_column(\\\"更新时间\\\", style=\\\"yellow\\\")\\n    \\n    for idx, path, title, updated in sessions:\\n        try:\\n            dt = datetime.fromisoformat(updated)\\n            time_str = dt.strftime(\\\"%Y-%m-%d %H:%M\\\")\\n        except:\\n            time_str = updated[:19] if len(updated) > 19 else updated\\n            \\n        table.add_row(str(idx), title, time_str)\\n        \\n    console.print(table)\\n\\ndef print_history(session):\\n    history = [m for m in session.messages if m[\\\"role\\\"] != \\\"system\\\"]\\n    if not history:\\n        console.print(\\\"[yellow]无对话历史。[/yellow]\\\")\\n        return\\n\\n    console.print(Rule(\\\"[bold cyan]对话历史[/bold cyan]\\\", style=\\\"cyan\\\"))\\n    \\n    for i, msg in enumerate(history, 1):\\n        role = msg[\\\"role\\\"]\\n        content = msg.get(\\\"content\\\", \\\"\\\")\\n        \\n        if role == \\\"user\\\":\\n            style = \\\"bold blue\\\"\\n            prefix = \\\"用户\\\"\\n        elif role == \\\"assistant\\\":\\n            style = \\\"bold green\\\"\\n            prefix = \\\"AI\\\"\\n        elif role == \\\"tool\\\":\\n            style = \\\"bold yellow\\\"\\n            prefix = \\\"工具\\\"\\n        else:\\n            style = \\\"bold white\\\"\\n            prefix = role\\n            \\n        if len(content) > 500:\\n            display_content = content[:500] + \\\"\\\\n[内容过长，已截断...]\\\"\\n        else:\\n            display_content = content\\n            \\n        console.print(f\\\"[bold]{i}. {prefix}:[/bold] {display_content}\\\")\\n        \\n    console.print(Rule(style=\\\"cyan\\\"))\\n\\ndef main():\\n    session = SessionManager()\\n    \\n    console.clear()\\n    console.print(Panel.fit(\\n        \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n        \\\"[dim]Powered by Rich & OpenAI API[/dim]\\\\n\\\"\\n        f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n        title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n        subtitle=\\\"输入 /help 查看命令\\\",\\n        border_style=\\\"green\\\"\\n    ))\\n    \\n    while True:\\n        try:\\n            user_input = Prompt.ask(\\\"[bold blue]你[/bold blue]\\\")\\n        except (EOFError, KeyboardInterrupt):\\n            console.print(\\\"\\\\n[yellow]退出中...[/yellow]\\\")\\n            break\\n            \\n        if not user_input:\\n            continue\\n\\n        if user_input.startswith(\\\"/\\\"):\\n            parts = user_input.split(maxsplit=1)\\n            cmd = parts[0].lower()\\n            arg = parts[1] if len(parts) > 1 else None\\n\\n            if cmd in [\\\"/exit\\\", \\\"/quit\\\"]:\\n                session.save_current()\\n                console.print(\\\"[bold red]再见！[/bold red]\\\")\\n                break\\n\\n            elif cmd == \\\"/sessions\\\":\\n                sessions = session.get_session_files()\\n                if not sessions:\\n                    console.print(\\\"[yellow]未找到保存的会话。[/yellow]\\\")\\n                else:\\n                    print_sessions(sessions)\\n                    if arg:\\n                        try:\\n                            num = int(arg)\\n                            if 1 <= num <= len(sessions):\\n                                _, file_path, _, _ = sessions[num-1]\\n                                session.load_session(file_path)\\n                            else:\\n                                console.print(f\\\"[red]无效数字，有效范围: 1 ~ {len(sessions)}[/red]\\\")\\n                        except ValueError:\\n                            console.print(\\\"[red]请提供数字，例如: /sessions 2[/red]\\\")\\n\\n            elif cmd == \\\"/history\\\":\\n                print_history(session)\\n\\n            elif cmd == \\\"/new\\\":\\n                session.save_current()\\n                session._init_new_session()\\n                console.print(\\\"[bold green]已开始新会话。[/bold green]\\\")\\n\\n            elif cmd == \\\"/save\\\":\\n                session.save_current()\\n                console.print(f\\\"[bold green]会话已保存到 {session.session_file.name}[/bold green]\\\")\\n\\n            elif cmd == \\\"/clear\\\":\\n                console.clear()\\n                console.print(Panel.fit(\\n                    \\\"[bold cyan]Code Agent TUI[/bold cyan]\\\\n\\\"\\n                    f\\\"[dim]Working Directory: {os.getcwd()}[/dim]\\\",\\n                    title=\\\"[bold green]欢迎使用[/bold green]\\\",\\n                    subtitle=\\\"输入 /help 查看命令\\\",\\n                    border_style=\\\"green\\\"\\n                ))\\n\\n            elif cmd == \\\"/help\\\":\\n                print_help()\\n\\n            else:\\n                console.print(f\\\"[red]未知命令: {cmd}，输入 /help 获取帮助[/red]\\\")\\n            continue\\n\\n        if len(session.messages) == 1:\\n            title_candidate = user_input[:20].strip()\\n            session.title = title_candidate if title_candidate else \\\"未命名会话\\\"\\n\\n        console.print(f\\\"[bold blue]你:[/bold blue] {user_input}\\\")\\n        session.messages.append({\\\"role\\\": \\\"user\\\", \\\"content\\\": user_input})\\n\\n        assistant_content = \\\"\\\"\\n        tool_calls_dict = {}\\n        \\n        display_text = Text()\\n        display_text.append(\\\"AI: \\\", style=\\\"bold green\\\")\\n        \\n        with console.status(\\\"[bold yellow]AI 正在思考...[/bold yellow]\\\") as status:\\n            try:\\n                stream = client.chat.completions.create(\\n                    model=API_MODEL,\\n                    messages=session.messages,\\n                    tools=tools,\\n                    tool_choice=\\\"auto\\\",\\n                    stream=True,\\n                    timeout=60\\n                )\\n            except Exception as e:\\n                console.print(f\\\"\\\\n[bold red]API 调用失败: {e}[/bold red]\\\")\\n                session.messages.pop()\\n                continue\\n\\n            content_buffer = \\\"\\\"\\n            tool_calls_buffer = {}\\n            \\n            with Live(display_text, refresh_per_second=12, vertical_overflow=\\\"visible\\\") as live:\\n                try:\\n                    for chunk in stream:\\n                        if not chunk.choices:\\n                            continue\\n                        delta = chunk.choices[0].delta\\n\\n                        if delta.content:\\n                            char = delta.content\\n                            content_buffer += char\\n                            display_text.append(char)\\n                            live.update(display_text)\\n                            \\n                        if delta.tool_calls:\\n                            for tc in delta.tool_calls:\\n                                idx = tc.index\\n                                if idx not in tool_calls_buffer:\\n                                    tool_calls_buffer[idx] = {\\\"id\\\": None, \\\"name\\\": None, \\\"arguments\\\": \\\"\\\"}\\n                                if tc.id:\\n                                    tool_calls_buffer[idx][\\\"id\\\"] = tc.id\\n                                if tc.function:\\n                                    if tc.function.name:\\n                                        tool_calls_buffer[idx][\\\"name\\\"] = tc.function.name\\n                                    if tc.function.arguments:\\n                                        tool_calls_buffer[idx][\\\"arguments\\\"] += tc.function.arguments\\n                                        \\n                except Exception as e:\\n                    live.update(Text(f\\\"[bold red]流式传输错误: {e}[/bold red]\\\"))\\n                    console.print()\\n                    break\\n\\n        console.print()\\n            \\n        assistant_message = {\\\"role\\\": \\\"assistant\\\", \\\"content\\\": content_buffer}\\n        tool_calls = []\\n        for idx in sorted(tool_calls_buffer.keys()):\\n            item = tool_calls_buffer[idx]\\n            if item[\\\"id\\\"] and item[\\\"name\\\"]:\\n                tool_calls.append({\\n                    \\\"id\\\": item[\\\"id\\\"],\\n                    \\\"type\\\": \\\"function\\\",\\n                    \\\"function\\\": {\\n                        \\\"name\\\": item[\\\"name\\\"],\\n                        \\\"arguments\\\": item[\\\"arguments\\\"]\\n                    }\\n                })\\n                \\n        if tool_calls:\\n            assistant_message[\\\"tool_calls\\\"] = tool_calls\\n        session.messages.append(assistant_message)\\n\\n        if not tool_calls:\\n            session.save_current()\\n            continue\\n\\n        for tool_call in tool_calls:\\n            func_name = tool_call[\\\"function\\\"][\\\"name\\\"]\\n            func_args = json.loads(tool_call[\\\"function\\\"][\\\"arguments\\\"])\\n\\n            console.print(f\\\"\\\\n[bold yellow]调用工具: {func_name}[/bold yellow]\\\")\\n            console.print(f\\\"[dim]参数: {func_args}[/dim]\\\")\\n            \\n            if func_name not in function_map:\\n                result = f\\\"错误: 未知工具 '{func_name}'\\\"\\n            else:\\n                try:\\n                    result = function_map[func_name](**func_args)\\n                except Exception as e:\\n                    result = f\\\"执行工具时发生错误: {e}\\\"\\n                    \\n            preview = result[:200] + \\\"...\\\" if len(result) > 200 else result\\n            console.print(Panel(result if len(result) < 200 else preview, title=f\\\"[bold green]{func_name} 返回[/bold green]\\\", border_style=\\\"green\\\"))\\n\\n            session.messages.append({\\n                \\\"role\\\": \\\"tool\\\",\\n                \\\"tool_call_id\\\": tool_call[\\\"id\\\"],\\n                \\\"content\\\": result\\n            })\\n\\n        session.save_current()\\n\\nif __name__ == \\\"__main__\\\":\\n    main()\\n'@\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_94347d44c179497189ba04a6",
+      "content": "[命令执行成功，无输出]"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_c2f49fde0f664d88ac623c7e",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c2f49fde0f664d88ac623c7e",
+      "content": "[标准错误]\n  File \"E:\\Users\\Administrator\\My_Agent\\AI.py\", line 23\n    help_text = \"\"\"\n                ^^^\nSyntaxError: (unicode error) 'utf-8' codec can't decode byte 0xbf in position 3: invalid start byte"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_ef7270d7aa4c424eb2c3884f",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python -c \\\"\\nimport sys\\nsys.stdout.write('Test')\\n\\\"\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_ef7270d7aa4c424eb2c3884f",
+      "content": "Test"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_9177c95f79de436787b8a9e8",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python -c \\\"\\nwith open(r'E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py', 'rb') as f:\\n    content = f.read()\\nprint(repr(content[500:600]))\\n\\\"\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_9177c95f79de436787b8a9e8",
+      "content": "b'int_help():\\n    help_text = \"\"\"\\n**\\xbf\\xc9\\xd3\\xc3\\xc3\\xfc\\xc1\\xee:**\\n\\n- `/sessions`          : \\xc1\\xd0\\xb3\\xf6\\xcb\\xf9\\xd3\\xd0\\xd2\\xd1\\xb1\\xa3\\xb4\\xe6\\xb5\\xc4\\xbb\\xe1\\xbb\\xb0\\n- `/ses'"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_51d70ac2bcd244c0bf8aab14",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python -c \\\"\\nimport codecs\\nwith open(r'E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py', 'r', encoding='utf-8-sig') as f:\\n    content = f.read()\\nprint(content[:1000])\\n\\\"\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_51d70ac2bcd244c0bf8aab14",
+      "content": "[标准错误]\nTraceback (most recent call last):\n  File \"<string>\", line 4, in <module>\n    content = f.read()\n  File \"<frozen codecs>\", line 325, in decode\n  File \"E:\\Program Files\\Python313\\Lib\\encodings\\utf_8_sig.py\", line 69, in _buffer_decode\n    return codecs.utf_8_decode(input, errors, final)\n           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^\nUnicodeDecodeError: 'utf-8' codec can't decode byte 0xbf in position 534: invalid start byte"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_f0328f29b21d4e37a2f74857",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python -c \\\"\\nwith open(r'E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py', 'rb') as f:\\n    content = f.read()\\n# 尝试用 GBK 解码看看\\ntry:\\n    text = content.decode('gbk')\\n    print(text[:1000])\\nexcept:\\n    print('GBK decode failed')\\n\\\"\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_f0328f29b21d4e37a2f74857",
+      "content": "# -*- coding: utf-8 -*-\nimport os\nimport json\nfrom pathlib import Path\nfrom datetime import datetime\n\nfrom rich.console import Console\nfrom rich.panel import Panel\nfrom rich.table import Table\nfrom rich.prompt import Prompt\nfrom rich.markdown import Markdown\nfrom rich.live import Live\nfrom rich.text import Text\nfrom rich.rule import Rule\n\nfrom config import client, API_MODEL, SESSION_DIR\nfrom tools import tools, function_map\nfrom session_manager import SessionManager\n\nconsole = Console()\n\ndef print_help():\n    help_text = \"\"\"\n**可用命令:**\n\n- `/sessions`          : 列出所有已保存的会话\n- `/sessions <num>`    : 通过编号加载特定会话\n- `/history`           : 查看完整对话历史\n- `/new`               : 开始新会话（自动保存当前会话）\n- `/save`              : 手动保存当前会话\n- `/clear`             : 清屏\n- `/exit` 或 `/quit`   : 退出并保存当前会话\n\"\"\"\n    console.print(Panel(help_text.strip(), title=\"[bold blue]帮助[/bold blue]\", border_style=\"blue\"))\n\ndef print_sessions(sessions):\n    table = Table(title=\"[bold green]已保存的会话[/bold green]\", show_header=True, he"
+    },
+    {
+      "role": "assistant",
+      "content": "",
+      "tool_calls": [
+        {
+          "id": "call_c8adee5a84a043e3a8df213d",
+          "type": "function",
+          "function": {
+            "name": "exec_powershell",
+            "arguments": "{\"command\": \"python -c \\\"\\nwith open(r'E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py', 'rb') as f:\\n    content = f.read()\\ntext = content.decode('gbk')\\nwith open(r'E:\\\\Users\\\\Administrator\\\\My_Agent\\\\AI.py', 'w', encoding='utf-8') as f:\\n    f.write(text)\\nprint('Converted to UTF-8 successfully')\\n\\\"\"}"
+          }
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "tool_call_id": "call_c8adee5a84a043e3a8df213d",
+      "content": "Converted to UTF-8 successfully"
+    },
+    {
+      "role": "user",
+      "content": "继续，但是你不能测试程序，要喊我测试"
+    },
+    {
+      "role": "assistant",
+      "content": "好的，我已经完成了代码转换。之前因为 PowerShell 脚本编码问题导致文件变成了 GBK 编码，我现在已经将其修复为标准的 UTF-8 编码。\n\n**优化后的 `AI.py` 主要特性：**\n\n1.  **现代化 TUI 界面**：使用 `rich` 库替代了原有的纯文本输出。\n2.  **彩色高亮**：\n    *   **用户输入**：蓝色粗体。\n    *   **AI 回复**：绿色粗体，支持流式打字机效果。\n    *   **工具调用**：黄色高亮，并在完成后用绿色面板显示结果摘要。\n    *   **错误信息**：红色高亮。\n3.  **美观的列表展示**：\n    *   `/sessions` 命令现在会显示为一个带边框的表格，包含序号、标题和格式化后的时间。\n    *   `/history` 命令会以清晰的列表形式展示历史消息，并自动截断过长的内容。\n4.  **交互式提示**：\n    *   使用 `rich.Prompt` 替换了原生的 `input()`，提供更友好的输入体验。\n    *   使用 `rich.Live` 实现 AI 回复的实时流式渲染，避免传统打印带来的闪烁感。\n    *   增加了一个“AI 正在思考...”的状态指示器。\n5.  **新功能**：\n    *   增加了 `/clear` 命令用于清屏。\n    *   欢迎界面更加醒目，使用了面板（Panel）布局。\n\n**文件位置：** `E:\\Users\\Administrator\\My_Agent/AI.py`\n\n请您运行 `python AI.py` 测试新的 TUI 界面，看看效果是否符合预期。如果有需要调整的地方（比如颜色、布局等），请告诉我。"
+    }
+  ],
+  "created_at": "2026-07-12T07:08:29.132451",
+  "updated_at": "2026-07-12T07:08:29.132469"
+}

@@ -39,7 +39,7 @@ class SessionManager:
     def load_session(self, file_path: Path):
         """加载指定会话文件并显示近期历史"""
         with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(fp)
+            data = json.load(f)
         self.title = data.get("title", "未命名会话")
         system_prompt = build_system_prompt()
         self.messages = [{"role": "system", "content": system_prompt}] + data.get("messages", [])
