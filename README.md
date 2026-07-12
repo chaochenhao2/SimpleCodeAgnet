@@ -1,4 +1,4 @@
-﻿# AI 代码助手 (PowerShell)
+# AI 代码助手 (PowerShell)
 
 一个在 Windows 系统上使用 PowerShell 终端运行的模块化 AI 代码助手。
 
