@@ -20,6 +20,7 @@ from tools import tools, function_map
 from session_manager import SessionManager
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.live import Live
 
 console = Console()
 
@@ -217,36 +218,32 @@ def main():
 
             stream_ok = True
             try:
-                for chunk in stream:
-                    if not chunk.choices:
-                        continue
-                    delta = chunk.choices[0].delta
+                with Live(console=console, refresh_per_second=10, transient=False) as live:
+                    for chunk in stream:
+                        if not chunk.choices:
+                            continue
+                        delta = chunk.choices[0].delta
 
-                    if delta.content:
-                        char = delta.content
-                        content_buffer += char
-                        sys.stdout.write(char)
-                        sys.stdout.flush()
+                        if delta.content:
+                            content_buffer += delta.content
+                            live.update(Markdown(content_buffer))
 
-                    if delta.tool_calls:
-                        for tc in delta.tool_calls:
-                            idx = tc.index
-                            if idx not in tool_calls_buffer:
-                                tool_calls_buffer[idx] = {"id": None, "name": None, "arguments": ""}
-                            if tc.id:
-                                tool_calls_buffer[idx]["id"] = tc.id
-                            if tc.function:
-                                if tc.function.name:
-                                    tool_calls_buffer[idx]["name"] = tc.function.name
-                                if tc.function.arguments:
-                                    tool_calls_buffer[idx]["arguments"] += tc.function.arguments
+                        if delta.tool_calls:
+                            for tc in delta.tool_calls:
+                                idx = tc.index
+                                if idx not in tool_calls_buffer:
+                                    tool_calls_buffer[idx] = {"id": None, "name": None, "arguments": ""}
+                                if tc.id:
+                                    tool_calls_buffer[idx]["id"] = tc.id
+                                if tc.function:
+                                    if tc.function.name:
+                                        tool_calls_buffer[idx]["name"] = tc.function.name
+                                    if tc.function.arguments:
+                                        tool_calls_buffer[idx]["arguments"] += tc.function.arguments
 
             except Exception as e:
-                sys.stdout.write(f"\n流式传输错误: {e}")
                 stream_ok = False
-
-            sys.stdout.write("\n")
-            sys.stdout.flush()
+                print(f"\n流式传输错误: {e}")
 
             if not stream_ok:
                 del session.messages[msg_count_before:]
@@ -296,7 +293,6 @@ def main():
                     "content": result
                 })
 
-        render_conversation(session)
         session.save_current()
 
 if __name__ == "__main__":
