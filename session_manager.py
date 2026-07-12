@@ -47,7 +47,7 @@ class SessionManager:
         print(f"已恢复会话: {self.title}")
         history = [m for m in self.messages if m["role"] != "system"]
         if history:
-            print("\n=== 近期对话（最近5条消息）===")
+            print("\n近期对话（最近5条消息）:")
             for msg in history[-5:]:
                 role = msg["role"]
                 content = msg.get("content", "")
@@ -64,7 +64,7 @@ class SessionManager:
                 print(f"  [{prefix}] {content}")
         else:
             print("  (无历史消息)")
-        print("(输入消息以继续，或输入 /history 查看完整历史)")
+        print("输入消息以继续，或输入 /history 查看完整历史")
 
     def _sanitize_filename(self, name: str) -> str:
         """将标题转换为有效的文件名（移除非法字符）"""
