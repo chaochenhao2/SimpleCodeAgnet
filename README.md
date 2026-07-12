@@ -1,10 +1,10 @@
-﻿# AI 代码助手 (PowerShell)
+# AI 代码助手 (PowerShell)
 
 一个在 Windows 系统上使用 PowerShell 终端运行的模块化 AI 代码助手。
 
 ## 项目结构
 
-`
+``
 My_Agent/
 ├── AI.py                 # 主入口文件（Rich TUI）
 ├── config.py             # 配置和 API 设置
@@ -13,7 +13,7 @@ My_Agent/
 ├── prompt_builder.py     # 动态系统提示词构建器
 ├── .env                  # 环境变量（API_KEY 等）
 └── .MY_CODE_AGENT/       # 会话存储目录
-`
+``
 
 ## 模块说明
 
