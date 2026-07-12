@@ -1,19 +1,28 @@
 ﻿import subprocess
 import os
+import sys
 
 # ================== 工具函数 ==================
-def exec_powershell(command: str, timeout: int = 30) -> str:
-    '''执行 PowerShell 命令'''
+def execute_command(command: str, timeout: int = 30) -> str:
+    '''在系统 Shell 中执行命令（跨平台）'''
     try:
-        # 前置设置 UTF-8 编码，保证输出能被正确解码
-        cmd = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
-        result = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Command", cmd],
-            capture_output=True,
-            encoding='utf-8',
-            timeout=timeout,
-            shell=False
-        )
+        if sys.platform == "win32":
+            cmd = f"[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; $OutputEncoding = [System.Text.Encoding]::UTF8; {command}"
+            result = subprocess.run(
+                ["powershell.exe", "-NoProfile", "-Command", cmd],
+                capture_output=True,
+                encoding='utf-8',
+                timeout=timeout,
+                shell=False
+            )
+        else:
+            result = subprocess.run(
+                ["bash", "-c", command],
+                capture_output=True,
+                encoding='utf-8',
+                timeout=timeout,
+                shell=False
+            )
         output = result.stdout or ""
         if result.stderr:
             output += "\n[stderr]\n" + result.stderr
@@ -48,12 +57,12 @@ tools = [
     {
         "type": "function",
         "function": {
-            "name": "exec_powershell",
-            "description": "执行 PowerShell 命令并返回输出（包括标准输出和标准错误）。",
+            "name": "execute_command",
+            "description": "在系统 Shell 中执行命令并返回输出（Windows 使用 PowerShell，macOS/Linux 使用 bash）。",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "command": {"type": "string", "description": "PowerShell 命令字符串，例如 'Get-Process'"}
+                    "command": {"type": "string", "description": "要执行的 Shell 命令字符串"}
                 },
                 "required": ["command"]
             }
@@ -67,7 +76,7 @@ tools = [
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "path": {"type": "string", "description": "文件路径，例如 'data.txt' 或 'C:/Users/name/file.txt'"}
+                    "path": {"type": "string", "description": "文件路径，例如 'data.txt' 或 '/home/user/file.txt'"}
                 },
                 "required": ["path"]
             }
@@ -91,7 +100,7 @@ tools = [
 ]
 
 function_map = {
-    "exec_powershell": exec_powershell,
+    "execute_command": execute_command,
     "read_file": read_file,
     "write_file": write_file,
 }

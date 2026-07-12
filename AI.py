@@ -12,12 +12,16 @@ if sys.platform == "win32":
         kernel32 = ctypes.windll.kernel32
         kernel32.SetConsoleCP(65001)
         kernel32.SetConsoleOutputCP(65001)
-    except:
+    except Exception:
         pass
 
 from config import client, API_MODEL
 from tools import tools, function_map
 from session_manager import SessionManager
+from rich.console import Console
+from rich.markdown import Markdown
+
+console = Console()
 
 def clear_screen():
     os.system("cls" if os.name == "nt" else "clear")
@@ -49,7 +53,7 @@ def render_conversation(session):
             print(f"[你] {content}")
         elif role == "assistant":
             if content:
-                print(content)
+                console.print(Markdown(content))
             if msg.get("tool_calls"):
                 for tc in msg["tool_calls"]:
                     args_summary = str(json.loads(tc["function"]["arguments"]))[:80]
@@ -80,7 +84,7 @@ def print_sessions(sessions):
         try:
             dt = datetime.fromisoformat(updated)
             time_str = dt.strftime("%Y-%m-%d %H:%M")
-        except:
+        except Exception:
             time_str = str(updated)[:16]
         print(f"{idx:>3} | {title:<40} | {time_str}")
     print()
@@ -110,7 +114,10 @@ def print_history(session):
 
         if len(content) > 500:
             content = content[:500] + "\n...内容过长，已截断"
-        print(f"{i}. [{prefix}] {content}")
+        if role == "assistant":
+            console.print(f"{i}. [{prefix}]", Markdown(content))
+        else:
+            print(f"{i}. [{prefix}] {content}")
     print()
 
 def main():
@@ -188,9 +195,11 @@ def main():
         render_conversation(session)
 
         # Agent 内循环：反复调用 AI 直到它给出最终回答（不再调用工具）
+        user_msg_idx = len(session.messages) - 1
         while True:
             content_buffer = ""
             tool_calls_buffer = {}
+            msg_count_before = len(session.messages)
 
             try:
                 stream = client.chat.completions.create(
@@ -203,9 +212,10 @@ def main():
                 )
             except Exception as e:
                 print(f"\nAPI 调用失败: {e}")
-                session.messages.pop()
+                del session.messages[user_msg_idx:]
                 break
 
+            stream_ok = True
             try:
                 for chunk in stream:
                     if not chunk.choices:
@@ -233,9 +243,14 @@ def main():
 
             except Exception as e:
                 sys.stdout.write(f"\n流式传输错误: {e}")
+                stream_ok = False
 
             sys.stdout.write("\n")
             sys.stdout.flush()
+
+            if not stream_ok:
+                del session.messages[msg_count_before:]
+                break
 
             assistant_message = {"role": "assistant", "content": content_buffer}
             tool_calls = []
@@ -256,10 +271,8 @@ def main():
             session.messages.append(assistant_message)
 
             if not tool_calls:
-                # AI 给出最终回答，Agent 循环结束
                 break
 
-            # 执行工具，把结果加入消息后继续 Agent 循环
             for tool_call in tool_calls:
                 func_name = tool_call["function"]["name"]
                 func_args = json.loads(tool_call["function"]["arguments"])
@@ -283,6 +296,7 @@ def main():
                     "content": result
                 })
 
+        render_conversation(session)
         session.save_current()
 
 if __name__ == "__main__":

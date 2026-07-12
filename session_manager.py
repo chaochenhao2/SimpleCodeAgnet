@@ -12,6 +12,7 @@ class SessionManager:
         self.messages = []
         self.title = "未命名会话"
         self.session_file = None
+        self._created_at = None
         self._init_new_session()
 
     def _init_new_session(self):
@@ -19,6 +20,7 @@ class SessionManager:
         self.messages = [{"role": "system", "content": build_system_prompt()}]
         self.title = "未命名会话"
         self.session_file = None
+        self._created_at = None
 
     def get_session_files(self):
         """返回所有会话文件信息，按修改时间排序"""
@@ -30,7 +32,7 @@ class SessionManager:
                     data = json.load(fp)
                     title = data.get("title", "未命名")
                     updated = data.get("updated_at", datetime.fromtimestamp(f.stat().st_mtime).isoformat())
-            except:
+            except Exception:
                 title = "损坏的会话"
                 updated = datetime.fromtimestamp(f.stat().st_mtime).isoformat()
             sessions.append((idx, f, title, updated))
@@ -41,6 +43,7 @@ class SessionManager:
         with open(file_path, "r", encoding="utf-8") as f:
             data = json.load(f)
         self.title = data.get("title", "未命名会话")
+        self._created_at = data.get("created_at")
         system_prompt = build_system_prompt()
         self.messages = [{"role": "system", "content": system_prompt}] + data.get("messages", [])
         self.session_file = file_path
@@ -68,7 +71,7 @@ class SessionManager:
 
     def _sanitize_filename(self, name: str) -> str:
         """将标题转换为有效的文件名（移除非法字符）"""
-        illegal_chars = r'[<>:\"/\\\\|?*]'
+        illegal_chars = r'[<>:\"/\\|?*]'
         name = re.sub(illegal_chars, '', name)
         name = name.strip('. ')
         if not name:
@@ -110,11 +113,14 @@ class SessionManager:
                 self.session_file = new_path
                 print(f"会话文件已重命名为: {self.session_file.name}")
 
+        now = datetime.now().isoformat()
+        if self._created_at is None:
+            self._created_at = now
         save_data = {
             "title": self.title,
             "messages": self.messages[1:],
-            "created_at": datetime.now().isoformat(),
-            "updated_at": datetime.now().isoformat()
+            "created_at": self._created_at,
+            "updated_at": now
         }
         with open(self.session_file, "w", encoding="utf-8") as f:
             json.dump(save_data, f, ensure_ascii=False, indent=2)
